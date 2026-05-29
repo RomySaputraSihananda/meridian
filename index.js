@@ -16,6 +16,7 @@ import {
   startPolling,
   stopPolling,
   sendMessage,
+  sendMarkdown,
   sendMessageWithButtons,
   sendHTML,
   editMessage,
@@ -121,6 +122,18 @@ const TRAILING_DROP_CONFIRM_TOLERANCE_PCT = 1.0;
 function stripThink(text) {
   if (!text) return text;
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+}
+
+/** Remove chars that break Telegram legacy Markdown when pasting LLM output into a Markdown message */
+function sanitizeMarkdown(text) {
+  if (!text) return "";
+  // Escape lone * and _ so they don't open/close bold/italic spans unintentionally.
+  // Telegram legacy Markdown doesn't support backslash escaping, so we replace them with
+  // visually similar Unicode chars: • for *, ‐ for stray underscores in the middle of words.
+  return String(text)
+    .replace(/\*\*/g, "")        // remove double-asterisk (GitHub bold — not valid here)
+    .replace(/(?<!\w)\*(?!\w)/g, "•")  // lone * not part of a word → bullet
+    .replace(/(?<=\s)_(?=\s)/g, "‐");  // lone _ surrounded by spaces → hyphen
 }
 
 function sanitizeUntrustedPromptText(text, maxLen = 500) {
@@ -310,7 +323,7 @@ export async function runManagementCycle({ silent = false } = {}) {
       const val = config.management.solMode ? `◎${p.total_value_usd ?? "?"}` : `$${p.total_value_usd ?? "?"}`;
       const unclaimed = config.management.solMode ? `◎${p.unclaimed_fees_usd ?? "?"}` : `$${p.unclaimed_fees_usd ?? "?"}`;
       const statusLabel = act.action === "INSTRUCTION" ? "HOLD (instruction)" : act.action;
-      let line = `**${p.pair}** | Age: ${p.age_minutes ?? "?"}m | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${p.pnl_pct ?? "?"}% | Yield: ${p.fee_per_tvl_24h ?? "?"}% | ${inRange} | ${statusLabel}`;
+      let line = `*${p.pair}* | Age: ${p.age_minutes ?? "?"}m | Val: ${val} | Unclaimed: ${unclaimed} | PnL: ${p.pnl_pct ?? "?"}% | Yield: ${p.fee_per_tvl_24h ?? "?"}% | ${inRange} | ${statusLabel}`;
       if (p.instruction) line += `\nNote: "${p.instruction}"`;
       if (act.action === "CLOSE" && act.rule === "exit") line += `\n⚡ Trailing TP: ${act.reason}`;
       if (act.action === "CLOSE" && act.rule && act.rule !== "exit") line += `\nRule ${act.rule}: ${act.reason}`;
@@ -387,7 +400,7 @@ After executing, write a brief one-line result per position.
     if (!silent && telegramEnabled()) {
       if (mgmtReport) {
         if (liveMessage) await liveMessage.finalize(stripThink(mgmtReport)).catch(() => {});
-        else sendMessage(`🔄 Management Cycle\n\n${stripThink(mgmtReport)}`).catch(() => { });
+        else sendMarkdown(`🔄 Management Cycle\n\n${sanitizeMarkdown(stripThink(mgmtReport))}`).catch(() => { });
       }
       for (const p of positions) {
         if (!p.in_range && p.minutes_out_of_range >= config.management.outOfRangeWaitMinutes) {
@@ -741,7 +754,7 @@ IMPORTANT:
     if (!silent && telegramEnabled()) {
       if (screenReport) {
         if (liveMessage) await liveMessage.finalize(stripThink(screenReport)).catch(() => {});
-        else sendMessage(`🔍 Screening Cycle\n\n${stripThink(screenReport)}`).catch(() => { });
+        else sendMarkdown(`🔍 Screening Cycle\n\n${sanitizeMarkdown(stripThink(screenReport))}`).catch(() => { });
       }
     }
   }

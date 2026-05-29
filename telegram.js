@@ -131,6 +131,13 @@ export async function sendMessage(text) {
   return postTelegram("sendMessage", { text: String(text).slice(0, 4096) });
 }
 
+// Sends with Telegram legacy Markdown rendering (*bold*, _italic_, `code`).
+// Use for agent cycle reports. LLM output must be sanitised before passing here.
+export async function sendMarkdown(text) {
+  if (!TOKEN || !chatId) return;
+  return postTelegram("sendMessage", { text: String(text).slice(0, 4096), parse_mode: "Markdown" });
+}
+
 export async function sendMessageWithButtons(text, inlineKeyboard) {
   if (!TOKEN || !chatId) return;
   return postTelegram("sendMessage", {
