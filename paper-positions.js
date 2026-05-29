@@ -39,29 +39,17 @@ function save(state) {
 
 let _DLMM = null;
 let _getBinIdFromPrice = null;
-let _getPriceOfBinByBinId = null;
-let _conn = null;
 
 async function getDLMMHelpers() {
   if (!_DLMM) {
     const mod = await import("@meteora-ag/dlmm");
     _DLMM = mod.default;
     _getBinIdFromPrice = mod.default?.getBinIdFromPrice;
-    _getPriceOfBinByBinId = mod.getPriceOfBinByBinId;
   }
   return {
     DLMM: _DLMM,
     getBinIdFromPrice: _getBinIdFromPrice,
-    getPriceOfBinByBinId: _getPriceOfBinByBinId,
   };
-}
-
-async function getConnection() {
-  if (!_conn) {
-    const { Connection } = await import("@solana/web3.js");
-    _conn = new Connection(process.env.RPC_URL, "confirmed");
-  }
-  return _conn;
 }
 
 // ─── API helpers ──────────────────────────────────────────────────────────────
@@ -231,8 +219,8 @@ export async function openPaperPosition({
     pool_name:    name || pool_address.slice(0, 8),
     pair:         `${tokenXSymbol}-${tokenYSymbol}`,
     deposit_amount,
-    lower_price,
-    upper_price,
+    raw_lower_price: lower_price,
+    raw_upper_price: upper_price,
     strategy_type,
     bin_step:         binStep,
     lp_fee_fraction:  lpFeeFraction,
@@ -267,7 +255,7 @@ export async function openPaperPosition({
   state.positions[id] = position;
   save(state);
 
-  log("paper_sim", `Opened paper position ${id}: ${position.pair} $${deposit_amount} [${lower_price}–${upper_price}] ${strategy_type}`);
+  log("paper_sim", `Opened paper position ${id}: ${position.pair} $${deposit_amount} [${position.lower_price}–${position.upper_price}] ${strategy_type}`);
   return formatSummary(position);
 }
 
