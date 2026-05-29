@@ -980,7 +980,7 @@ export async function getPositionPnl({ pool_address, position_address }) {
             if (p.lower_bin != null) relayLowerPrice = Number(_getPriceOfBinByBinId(p.lower_bin, relayBinStep).toString());
             if (p.upper_bin != null) relayUpperPrice = Number(_getPriceOfBinByBinId(p.upper_bin, relayBinStep).toString());
             if (tracked?.active_bin_at_deploy != null) relayEntryPrice = Number(_getPriceOfBinByBinId(tracked.active_bin_at_deploy, relayBinStep).toString());
-          } catch (_) { /* bin price computation failed — IL stays null */ }
+          } catch { /* bin price computation failed — IL stays null */ }
         }
         const relayIlPct = estimateIlPct(relayCurrentPrice, relayEntryPrice, relayLowerPrice, relayUpperPrice);
         const relayCurrentValueUsd = p.total_value_usd ?? null;
@@ -1040,7 +1040,7 @@ export async function getPositionPnl({ pool_address, position_address }) {
         if (p.lowerBinId != null) sdkLowerPrice = Number(_getPriceOfBinByBinId(p.lowerBinId, sdkBinStep).toString());
         if (p.upperBinId != null) sdkUpperPrice = Number(_getPriceOfBinByBinId(p.upperBinId, sdkBinStep).toString());
         if (sdkTracked?.active_bin_at_deploy != null) sdkEntryPrice = Number(_getPriceOfBinByBinId(sdkTracked.active_bin_at_deploy, sdkBinStep).toString());
-      } catch (_) { /* bin price computation failed — IL stays null */ }
+      } catch { /* bin price computation failed — IL stays null */ }
     }
     const sdkIlPct = estimateIlPct(sdkCurrentPrice, sdkEntryPrice, sdkLowerPrice, sdkUpperPrice);
     const sdkCurrentValueUsd = roundNum(currentValue, 4);
@@ -1113,6 +1113,7 @@ function estimateIlPct(currentPrice, entryPrice, lowerPrice, upperPrice) {
  * Linear approximation: impact = positionSize / (poolTvl * 2).
  * Returns null when data is missing.
  */
+// eslint-disable-next-line no-unused-vars
 function estimateSlippagePct(positionSizeUsd, poolTvlUsd) {
   if (!positionSizeUsd || !poolTvlUsd || poolTvlUsd <= 0) return null;
   return (positionSizeUsd / (poolTvlUsd * 2)) * 100;
@@ -1594,6 +1595,14 @@ export async function closePosition({ position_address, reason }) {
     const wallet = getWallet();
     const poolAddress = await lookupPoolForPosition(position_address, wallet.publicKey.toString());
     const poolMeta = await getPoolMetadata(poolAddress);
+
+    // Capture SOL balance before close so we can compute realized_sol after
+    let solBeforeClose = null;
+    try {
+      const walletBefore = await getWalletBalances();
+      solBeforeClose = walletBefore?.sol ?? null;
+    } catch { /* non-fatal — realized_sol stays null */ }
+
     if (shouldUseLpAgentRelay()) {
       let relaySubmitted = false;
       try {
@@ -1740,6 +1749,16 @@ export async function closePosition({ position_address, reason }) {
           tracked,
         });
 
+        // Compute realized_sol: actual wallet SOL delta after relay close + swap
+        let relayRealizedSol = null;
+        try {
+          const walletAfterRelay = await getWalletBalances();
+          const solAfterRelay = walletAfterRelay?.sol ?? null;
+          if (solBeforeClose != null && solAfterRelay != null) {
+            relayRealizedSol = roundNum(solAfterRelay - solBeforeClose, 6);
+          }
+        } catch { /* non-fatal */ }
+
         await recordPerformance({
           position: position_address,
           pool: poolAddress,
@@ -1759,6 +1778,7 @@ export async function closePosition({ position_address, reason }) {
           minutes_held: minutesHeld,
           close_reason: reason || "agent decision",
           signal_snapshot: signalSnapshot,
+          realized_sol: relayRealizedSol,
         });
 
         appendDecision({
@@ -2027,6 +2047,16 @@ export async function closePosition({ position_address, reason }) {
         tracked,
       });
 
+      // Compute realized_sol: actual wallet SOL delta after local close txs
+      let localRealizedSol = null;
+      try {
+        const walletAfterLocal = await getWalletBalances();
+        const solAfterLocal = walletAfterLocal?.sol ?? null;
+        if (solBeforeClose != null && solAfterLocal != null) {
+          localRealizedSol = roundNum(solAfterLocal - solBeforeClose, 6);
+        }
+      } catch { /* non-fatal */ }
+
       await recordPerformance({
         position: position_address,
         pool: poolAddress,
@@ -2046,6 +2076,7 @@ export async function closePosition({ position_address, reason }) {
         minutes_held: minutesHeld,
         close_reason: reason || "agent decision",
         signal_snapshot: signalSnapshot,
+        realized_sol: localRealizedSol,
       });
 
       appendDecision({

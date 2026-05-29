@@ -13,6 +13,9 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import fs from "fs";
+import { createRequire } from "module";
+
+const require = createRequire(import.meta.url);
 
 // ── Mocks (must be declared before any import that triggers them) ─────────────
 
@@ -38,7 +41,7 @@ import {
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 
-import ohlcv from "../fixtures/ohlcv.json" assert { type: "json" };
+const ohlcv = require("../fixtures/ohlcv.json");
 
 // ── Math helpers — mirrors paper-positions.js exactly ─────────────────────────
 
