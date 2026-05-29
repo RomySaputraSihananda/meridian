@@ -132,7 +132,7 @@ function computeInitialSplit(depositUsd, entryPrice, lowerPrice, upperPrice) {
 /**
  * Given one 5m candle, return { feeEarned, newIlUsd } relative to the position.
  */
-function processCandle(candle, position) {
+export function processCandle(candle, position) {
   const { low, high, close, volume } = candle;
   const { lowerPrice, upperPrice, lpFeeFraction, avgExistingBinTvl, weights, lowerBinId, upperBinId, depositAmount, initialXUsd, initialYUsd, entryPrice } = position;
 
