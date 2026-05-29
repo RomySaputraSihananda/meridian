@@ -17,6 +17,7 @@ import { setPositionInstruction } from "../state.js";
 import { getPoolMemory, addPoolNote } from "../pool-memory.js";
 import { addStrategy, listStrategies, getStrategy, setActiveStrategy, removeStrategy } from "../strategy-library.js";
 import { addToBlacklist, removeFromBlacklist, listBlacklist } from "../token-blacklist.js";
+import { open_paper_position, get_paper_position, close_paper_position, list_paper_positions } from "./simulator.js";
 import { blockDev, unblockDev, listBlockedDevs } from "../dev-blocklist.js";
 import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsOnPool } from "../smart-wallets.js";
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
@@ -236,6 +237,10 @@ function normalizeConfigValue(key, value) {
 
 // Map tool names to implementations
 const toolMap = {
+  open_paper_position,
+  get_paper_position,
+  close_paper_position,
+  list_paper_positions,
   discover_pools: discoverPools,
   get_top_candidates: getTopCandidates,
   get_pool_detail: getPoolDetail,
