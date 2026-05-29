@@ -32,6 +32,7 @@ module.exports = {
         NODE_ENV: "production",
         MERIDIAN_PROFILE: "autoresearch",
         MERIDIAN_DATA_DIR: "profiles/autoresearch",
+        DRY_RUN: "true",
       },
     },
   ],
