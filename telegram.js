@@ -93,6 +93,8 @@ async function postTelegram(method, body) {
     });
     if (!res.ok) {
       const err = await res.text();
+      // 400 "message is not modified" is not a real error — content was identical, silently skip
+      if (res.status === 400 && err.includes("message is not modified")) return null;
       log("telegram_error", `${method} ${res.status}: ${err.slice(0, 200)}`);
       return null;
     }
@@ -113,6 +115,7 @@ async function postTelegramRaw(method, body) {
     });
     if (!res.ok) {
       const err = await res.text();
+      if (res.status === 400 && err.includes("message is not modified")) return null;
       log("telegram_error", `${method} ${res.status}: ${err.slice(0, 200)}`);
       return null;
     }
