@@ -369,7 +369,7 @@ export function getStateSummary() {
  * Returns { action, reason } or null if no exit needed.
  */
 export function updatePnlAndCheckExits(position_address, positionData, mgmtConfig) {
-  const { pnl_pct: currentPnlPct, pnl_pct_suspicious, in_range, fee_per_tvl_24h } = positionData;
+  const { pnl_pct: currentPnlPct, pnl_pct_suspicious, pnl_pct_derived, in_range, fee_per_tvl_24h } = positionData;
   const state = load();
   const pos = state.positions[position_address];
   if (!pos || pos.closed) return null;
@@ -409,10 +409,16 @@ export function updatePnlAndCheckExits(position_address, positionData, mgmtConfi
   if (changed) save(state);
 
   // ── Stop loss ──────────────────────────────────────────────────
-  if (!pnl_pct_suspicious && currentPnlPct != null && mgmtConfig.stopLossPct != null && currentPnlPct <= mgmtConfig.stopLossPct) {
+  // When sanity guard fires, use derived PnL for stop-loss — never let a suspicious report hide a loss
+  const effectivePnlForSL = (pnl_pct_suspicious && pnl_pct_derived != null && Number.isFinite(pnl_pct_derived))
+    ? pnl_pct_derived
+    : currentPnlPct;
+
+  if (effectivePnlForSL != null && mgmtConfig.stopLossPct != null && effectivePnlForSL <= mgmtConfig.stopLossPct) {
+    const isSuspicious = pnl_pct_suspicious && pnl_pct_derived != null;
     return {
       action: "STOP_LOSS",
-      reason: `Stop loss: PnL ${currentPnlPct.toFixed(2)}% <= ${mgmtConfig.stopLossPct}%`,
+      reason: `Stop loss: PnL ${effectivePnlForSL.toFixed(2)}% <= ${mgmtConfig.stopLossPct}%${isSuspicious ? " (derived, sanity guard active)" : ""}`,
     };
   }
 
