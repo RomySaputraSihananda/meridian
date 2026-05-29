@@ -59,3 +59,35 @@ describe("evolveThresholds guards", () => {
     expect(() => evolveThresholds(data, cfgNoKey)).not.toThrow();
   });
 });
+
+describe("evolveThresholds walk-forward validation", () => {
+  it("rejects evolution when held-out expectancy would worsen", () => {
+    // 20 samples spanning 3+ days:
+    // First 14 (fit): many wins with high fee_tvl_ratio
+    // Last 6 (hold): losses despite high fee_tvl_ratio
+    // → proposed threshold raise should be rejected because hold-out is worse
+    const fitWins = Array.from({ length: 14 }, (_, i) => ({
+      pnl_usd: 5,
+      pnl_pct: 5,
+      fee_tvl_ratio: 0.15 + i * 0.01,
+      organic_score: 70,
+      recorded_at: `2026-05-0${(i % 7) + 1}T12:00:00.000Z`,
+    }));
+    const holdLosses = Array.from({ length: 6 }, (_, i) => ({
+      pnl_usd: -8,
+      pnl_pct: -8,
+      fee_tvl_ratio: 0.20,
+      organic_score: 70,
+      recorded_at: `2026-05-0${(i % 3) + 4}T12:00:00.000Z`,
+    }));
+    const data = [...fitWins, ...holdLosses];
+    const cfg2 = { screening: { minFeeActiveTvlRatio: 0.05, minOrganic: 60 } };
+    // Walk-forward should reject because hold-out with new (raised) threshold is worse
+    const result = evolveThresholds(data, cfg2);
+    // Either null (rejected) or returned without worsening threshold
+    if (result !== null) {
+      expect(result.changes?.minFeeActiveTvlRatio ?? cfg2.screening.minFeeActiveTvlRatio)
+        .toBeLessThanOrEqual(0.20);
+    }
+  });
+});

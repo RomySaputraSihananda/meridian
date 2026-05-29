@@ -321,8 +321,25 @@ export function evolveThresholds(perfData, config) {
     return null;
   }
 
-  const winners = perfData.filter((p) => p.pnl_pct > 0);
-  const losers  = perfData.filter((p) => p.pnl_pct < -5);
+  // ── Walk-forward split: fit on first 70%, validate on last 30% ──
+  const splitIdx = Math.floor(perfData.length * 0.7);
+  const fitData   = perfData.slice(0, splitIdx);
+  const holdData  = perfData.slice(splitIdx);
+
+  function computeExpectancy(data) {
+    if (!data.length) return 0;
+    const wins   = data.filter((p) => (p.pnl_usd ?? p.pnl_pct ?? 0) > 0);
+    const losses = data.filter((p) => (p.pnl_usd ?? p.pnl_pct ?? 0) <= 0);
+    const avgWin  = wins.length   ? wins.reduce((s, p) => s + (p.pnl_usd ?? p.pnl_pct ?? 0), 0) / wins.length   : 0;
+    const avgLoss = losses.length ? losses.reduce((s, p) => s + (p.pnl_usd ?? p.pnl_pct ?? 0), 0) / losses.length : 0;
+    return (wins.length / data.length) * avgWin + (losses.length / data.length) * avgLoss;
+  }
+
+  const baselineExpectancy = computeExpectancy(holdData);
+
+  // Threshold computations use fitData only (training window)
+  const winners = fitData.filter((p) => p.pnl_pct > 0);
+  const losers  = fitData.filter((p) => p.pnl_pct < -5);
 
   // Need at least some signal in both directions before adjusting
   const hasSignal = winners.length >= 2 || losers.length >= 2;
@@ -396,6 +413,21 @@ export function evolveThresholds(perfData, config) {
   }
 
   if (Object.keys(changes).length === 0) return { changes: {}, rationale: {} };
+
+  // ── Walk-forward validation: reject if hold-out expectancy worsens ──
+  if (changes.minFeeActiveTvlRatio != null) {
+    const newMinFee      = changes.minFeeActiveTvlRatio;
+    const filteredHold   = holdData.filter((p) => (p.fee_tvl_ratio ?? 0) >= newMinFee);
+    if (filteredHold.length >= 3) {
+      const filteredExpectancy = computeExpectancy(filteredHold);
+      if (filteredExpectancy < baselineExpectancy) {
+        log("lessons", `evolveThresholds: walk-forward rejected — filtered expectancy ${filteredExpectancy.toFixed(3)} < baseline ${baselineExpectancy.toFixed(3)}`);
+        return null;
+      }
+    } else {
+      log("lessons", `evolveThresholds: walk-forward skipped — only ${filteredHold.length} hold-out record(s) pass new threshold (need ≥ 3)`);
+    }
+  }
 
   // ── Persist changes to user-config.json ───────────────────────
   let userConfig = {};
