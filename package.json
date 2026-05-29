@@ -15,8 +15,10 @@
     "pm2:restart": "pm2 restart meridian --update-env",
     "pm2:logs": "pm2 logs meridian --lines 100",
     "dev": "DRY_RUN=true node index.js",
-    "test": "npm run test:syntax",
-    "test:syntax": "find . -path ./node_modules -prune -o -name '*.js' -exec node --check {} \\;",
+    "test": "vitest run --coverage",
+    "test:unit": "vitest run",
+    "test:syntax": "find . -path ./node_modules -prune -o -name '*.js' -print | xargs node --check",
+    "lint:syntax": "npm run test:syntax",
     "test:screen": "node scripts/manual/test-live-screening.js",
     "test:agent": "DRY_RUN=true node scripts/manual/test-live-agent.js",
     "postinstall": "node scripts/patch-anchor.js"
@@ -38,5 +40,9 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.7",
+    "vitest": "^4.1.7"
   }
 }

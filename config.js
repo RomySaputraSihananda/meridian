@@ -276,3 +276,15 @@ export function reloadScreeningThresholds() {
     );
   } catch { /* ignore */ }
 }
+
+/**
+ * bins_below = round(minBinsBelow + (clamp(volatility, 0, 5) / 5) * (maxBinsBelow - minBinsBelow))
+ * clamped to [minBinsBelow, maxBinsBelow].
+ * Returns null if volatility is not a positive finite number (skip deploy).
+ */
+export function computeBinsBelow(volatility, { minBinsBelow, maxBinsBelow } = config.strategy) {
+  const n = Number(volatility);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const raw = minBinsBelow + (Math.min(n, 5) / 5) * (maxBinsBelow - minBinsBelow);
+  return Math.round(Math.max(minBinsBelow, Math.min(maxBinsBelow, raw)));
+}
