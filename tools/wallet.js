@@ -8,6 +8,7 @@ import {
 import bs58 from "bs58";
 import { log } from "../logger.js";
 import { config } from "../config.js";
+import { withRetry } from "../resilient-client.js";
 
 let _connection = null;
 let _wallet = null;
@@ -72,8 +73,11 @@ export async function getWalletBalances() {
 
   try {
     const url = `https://api.helius.xyz/v1/wallet/${walletAddress}/balances?api-key=${HELIUS_KEY}`;
-    const res = await fetch(url);
-    
+    const res = await withRetry(
+      () => fetch(url),
+      { maxAttempts: 3, baseDelayMs: 500, timeoutMs: 15_000 }
+    );
+
     if (!res.ok) {
       throw new Error(`Helius API error: ${res.status} ${res.statusText}`);
     }
@@ -186,9 +190,12 @@ export async function swapToken({
     const orderUrl = `${JUPITER_SWAP_V2_API}/order?${search.toString()}`;
     const jupiterApiKey = getJupiterApiKey();
 
-    const orderRes = await fetch(orderUrl, {
-      headers: jupiterApiKey ? { "x-api-key": jupiterApiKey } : {},
-    });
+    const orderRes = await withRetry(
+      () => fetch(orderUrl, {
+        headers: jupiterApiKey ? { "x-api-key": jupiterApiKey } : {},
+      }),
+      { maxAttempts: 3, baseDelayMs: 500, timeoutMs: 15_000 }
+    );
     if (!orderRes.ok) {
       const body = await orderRes.text();
       throw new Error(`Swap V2 order failed: ${orderRes.status} ${body}`);
@@ -207,14 +214,17 @@ export async function swapToken({
     const signedTx = Buffer.from(tx.serialize()).toString("base64");
 
     // ─── Execute ───────────────────────────────────────────────
-    const execRes = await fetch(`${JUPITER_SWAP_V2_API}/execute`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(jupiterApiKey ? { "x-api-key": jupiterApiKey } : {}),
-      },
-      body: JSON.stringify({ signedTransaction: signedTx, requestId }),
-    });
+    const execRes = await withRetry(
+      () => fetch(`${JUPITER_SWAP_V2_API}/execute`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(jupiterApiKey ? { "x-api-key": jupiterApiKey } : {}),
+        },
+        body: JSON.stringify({ signedTransaction: signedTx, requestId }),
+      }),
+      { maxAttempts: 3, baseDelayMs: 500, timeoutMs: 15_000 }
+    );
     if (!execRes.ok) {
       throw new Error(`Swap V2 execute failed: ${execRes.status} ${await execRes.text()}`);
     }
