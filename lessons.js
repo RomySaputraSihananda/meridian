@@ -594,6 +594,27 @@ export function clearPerformance() {
   return count;
 }
 
+// ─── Per-Token PnL Ledger ──────────────────────────────────────
+
+/**
+ * Returns the cumulative net PnL (USD) for all closed positions on a given
+ * base mint. Returns 0 if no history exists for that mint.
+ *
+ * @param {string} baseMint - The base token mint address
+ * @returns {number}
+ */
+export function getTokenNetPnl(baseMint) {
+  if (!baseMint) return 0;
+  const { performance } = load();
+  return performance
+    .filter((p) => p.base_mint === baseMint)
+    .reduce((sum, p) => {
+      // pnl_usd is always computed and stored by recordPerformance; fall back to aliases
+      const val = p.pnl_usd ?? p.net_pnl_usd ?? p.pnl_pct ?? 0;
+      return sum + (Number.isFinite(val) ? val : 0);
+    }, 0);
+}
+
 // ─── Lesson Retrieval ──────────────────────────────────────────
 
 // Tags that map to each agent role — used for role-aware lesson injection
@@ -737,23 +758,46 @@ export function getPerformanceHistory({ hours = 24, limit = 50 } = {}) {
 /**
  * Get performance stats summary.
  */
-export function getPerformanceSummary() {
-  const data = load();
-  const p = data.performance;
+export function getPerformanceSummary({ hours = 24 } = {}) {
+  const { performance, lessons } = load();
+  const now = Date.now();
+  const windowMs = hours * 3600_000;
 
-  if (p.length === 0) return null;
+  function sumNetPnl(records) {
+    return records.reduce((acc, p) => acc + (p.pnl_usd ?? 0), 0);
+  }
 
-  const totalPnl = p.reduce((s, x) => s + x.pnl_usd, 0);
-  const avgPnlPct = p.reduce((s, x) => s + x.pnl_pct, 0) / p.length;
-  const avgRangeEfficiency = p.reduce((s, x) => s + x.range_efficiency, 0) / p.length;
-  const wins = p.filter((x) => x.pnl_usd > 0).length;
+  const recent = performance.filter((p) => {
+    const ts = p.closed_at ?? p.recorded_at;
+    return ts && (now - new Date(ts).getTime()) <= windowMs;
+  });
+
+  const beforeWindow = performance.filter((p) => {
+    const ts = p.closed_at ?? p.recorded_at;
+    return !ts || (now - new Date(ts).getTime()) > windowMs;
+  });
+
+  const allTimeNet = sumNetPnl(performance);
+  const recentNet = sumNetPnl(recent);
+  const beforeNet = sumNetPnl(beforeWindow);
 
   return {
-    total_positions_closed: p.length,
-    total_pnl_usd: Math.round(totalPnl * 100) / 100,
-    avg_pnl_pct: Math.round(avgPnlPct * 100) / 100,
-    avg_range_efficiency_pct: Math.round(avgRangeEfficiency * 10) / 10,
-    win_rate_pct: Math.round((wins / p.length) * 100),
-    total_lessons: data.lessons.length,
+    all_time: {
+      count: performance.length,
+      net_pnl_usd: Math.round(allTimeNet * 100) / 100,
+      win_rate: performance.length
+        ? performance.filter((p) => (p.pnl_usd ?? 0) > 0).length / performance.length
+        : 0,
+      total_lessons: lessons.length,
+    },
+    last_n_hours: {
+      hours,
+      count: recent.length,
+      net_pnl_usd: Math.round(recentNet * 100) / 100,
+    },
+    before_window: {
+      count: beforeWindow.length,
+      net_pnl_usd: Math.round(beforeNet * 100) / 100,
+    },
   };
 }
