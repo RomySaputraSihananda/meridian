@@ -4,6 +4,17 @@ import { buildSystemPrompt } from "./prompt.js";
 import { executeTool } from "./tools/executor.js";
 import { tools } from "./tools/definitions.js";
 
+/** Strip role-marker leakage that small models sometimes append after their answer. */
+function stripRoleLeakage(text) {
+  if (!text) return text;
+  // Remove any lines that start with role markers (Human:, The Human:, Assistant:, User:)
+  return text
+    .split("\n")
+    .filter((line) => !/^(The\s+)?Human\s*[.:]|^User\s*[.:]|^Assistant\s*[.:]/i.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
 const MANAGER_TOOLS  = new Set(["close_position", "claim_fees", "swap_token", "get_position_pnl", "get_my_positions", "get_wallet_balance", "open_paper_position", "get_paper_position", "close_paper_position", "list_paper_positions"]);
 const SCREENER_TOOLS = new Set(["deploy_position", "get_active_bin", "get_top_candidates", "check_smart_wallets_on_pool", "get_token_holders", "get_token_narrative", "get_token_info", "search_pools", "get_pool_memory", "get_wallet_balance", "get_my_positions", "open_paper_position", "get_paper_position", "close_paper_position", "list_paper_positions"]);
 const GENERAL_INTENT_ONLY_TOOLS = new Set([
@@ -308,8 +319,9 @@ export async function agentLoop(goal, maxSteps = config.llm.maxSteps, sessionHis
           continue;
         }
         log("agent", "Final answer reached");
-        log("agent", msg.content);
-        return { content: msg.content, userMessage: goal };
+        const cleanContent = stripRoleLeakage(msg.content);
+        log("agent", cleanContent);
+        return { content: cleanContent, userMessage: goal };
       }
       sawToolCall = true;
 
