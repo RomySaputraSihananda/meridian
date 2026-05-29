@@ -12,7 +12,7 @@ import {
 import { getWalletBalances, swapToken } from "./wallet.js";
 import { studyTopLPers } from "./study.js";
 import { addLesson, clearAllLessons, clearPerformance, removeLessonsByKeyword, getPerformanceHistory, pinLesson, unpinLesson, listLessons, getTokenNetPnl } from "../lessons.js";
-import { setPositionInstruction } from "../state.js";
+import { setPositionInstruction, getTrackedPositions } from "../state.js";
 
 import { getPoolMemory, addPoolNote } from "../pool-memory.js";
 import { addStrategy, listStrategies, getStrategy, setActiveStrategy, removeStrategy } from "../strategy-library.js";
@@ -684,6 +684,19 @@ async function runSafetyChecks(name, args) {
             log("risk_block", `Redeploy blocked: token ${baseMint} has cumulative net PnL ${tokenNetPnl.toFixed(4)} (negative history)`);
             return { pass: false, reason: `Redeploy blocked: this token has a negative cumulative PnL history (${tokenNetPnl.toFixed(4)}). Clear lessons to override.` };
           }
+        }
+      }
+
+      // Correlation-aware sizing: block if too many open positions from same launchpad
+      const launchpad = args.launchpad ?? args.base_token_launchpad ?? null;
+      if (launchpad && config.risk.maxSameLaunchpadPositions != null) {
+        const openPositions = getTrackedPositions(true);
+        const sameLaunchpadCount = openPositions.filter(p =>
+          p.launchpad && p.launchpad.toLowerCase() === launchpad.toLowerCase()
+        ).length;
+        if (sameLaunchpadCount >= config.risk.maxSameLaunchpadPositions) {
+          log("risk_block", `Deploy blocked: ${sameLaunchpadCount} open positions already from ${launchpad}`);
+          return { pass: false, reason: `Too many open positions from ${launchpad} (${sameLaunchpadCount}/${config.risk.maxSameLaunchpadPositions})` };
         }
       }
 

@@ -25,7 +25,7 @@ import {
 } from "../state.js";
 import { recordPerformance } from "../lessons.js";
 import { isBaseMintOnCooldown, isPoolOnCooldown } from "../pool-memory.js";
-import { normalizeMint } from "./wallet.js";
+import { normalizeMint, getWalletBalances } from "./wallet.js";
 import { appendDecision } from "../decision-log.js";
 import { agentMeridianJson, getAgentIdForRequests, getAgentMeridianHeaders } from "./agent-meridian.js";
 import { getAndClearStagedSignals } from "../signal-tracker.js";
@@ -466,6 +466,7 @@ export async function deployPosition({
   fee_tvl_ratio,
   organic_score,
   initial_value_usd,
+  launchpad,
 }) {
   pool_address = normalizeMint(pool_address);
   const activeStrategy = strategy || config.strategy.strategy;
@@ -701,6 +702,7 @@ export async function deployPosition({
           amount_x: finalAmountX,
           active_bin: activeBin.binId,
           initial_value_usd,
+          launchpad: launchpad || null,
           signal_snapshot: signalSnapshot,
         });
       }
@@ -839,6 +841,7 @@ export async function deployPosition({
       amount_x: finalAmountX,
       active_bin: activeBin.binId,
       initial_value_usd,
+      launchpad: launchpad || null,
       signal_snapshot: signalSnapshot,
     });
 
@@ -965,10 +968,29 @@ export async function getPositionPnl({ pool_address, position_address }) {
       const payload = await getMyPositions({ force: true, silent: true });
       const p = payload?.positions?.find((position) => position.position === position_address);
       if (p) {
+        const tracked = getTrackedPosition(position_address);
+        const relayBinStep = tracked?.bin_step ?? null;
+        let relayCurrentPrice = null;
+        let relayLowerPrice = null;
+        let relayUpperPrice = null;
+        let relayEntryPrice = null;
+        if (relayBinStep && _getPriceOfBinByBinId) {
+          try {
+            if (p.active_bin != null) relayCurrentPrice = Number(_getPriceOfBinByBinId(p.active_bin, relayBinStep).toString());
+            if (p.lower_bin != null) relayLowerPrice = Number(_getPriceOfBinByBinId(p.lower_bin, relayBinStep).toString());
+            if (p.upper_bin != null) relayUpperPrice = Number(_getPriceOfBinByBinId(p.upper_bin, relayBinStep).toString());
+            if (tracked?.active_bin_at_deploy != null) relayEntryPrice = Number(_getPriceOfBinByBinId(tracked.active_bin_at_deploy, relayBinStep).toString());
+          } catch (_) { /* bin price computation failed — IL stays null */ }
+        }
+        const relayIlPct = estimateIlPct(relayCurrentPrice, relayEntryPrice, relayLowerPrice, relayUpperPrice);
+        const relayCurrentValueUsd = p.total_value_usd ?? null;
+        const relayNetPnlUsd = (relayCurrentValueUsd != null && relayIlPct != null)
+          ? roundNum((p.pnl_usd ?? 0) + relayCurrentValueUsd * (relayIlPct / 100), 4)
+          : null;
         return {
           pnl_usd: p.pnl_usd,
           pnl_pct: p.pnl_pct,
-          current_value_usd: p.total_value_usd,
+          current_value_usd: relayCurrentValueUsd,
           unclaimed_fee_usd: p.unclaimed_fees_usd,
           all_time_fees_usd: p.collected_fees_usd,
           fee_per_tvl_24h: p.fee_per_tvl_24h,
@@ -978,6 +1000,9 @@ export async function getPositionPnl({ pool_address, position_address }) {
           active_bin: p.active_bin,
           age_minutes: p.age_minutes,
           request_id: payload?.request_id || null,
+          il_pct:           relayIlPct != null ? roundNum(relayIlPct, 2) : null,
+          slippage_est_pct: null, // pool TVL not available in relay path
+          net_pnl_usd:      relayNetPnlUsd,
         };
       }
       log("pnl_warn", "Relay positions API did not include requested position; falling back to Meteora PnL path");
@@ -1001,10 +1026,33 @@ export async function getPositionPnl({ pool_address, position_address }) {
       ? maybeNum(p.pnlSolPctChange)
       : maybeNum(p.pnlPctChange);
     const derivedPnlPct = deriveOpenPnlPct(p, solMode);
+
+    // ─── IL + slippage enrichment (Meteora SDK path) ──────────
+    const sdkTracked = getTrackedPosition(position_address);
+    const sdkBinStep = sdkTracked?.bin_step ?? null;
+    let sdkCurrentPrice = null;
+    let sdkLowerPrice = null;
+    let sdkUpperPrice = null;
+    let sdkEntryPrice = null;
+    if (sdkBinStep && _getPriceOfBinByBinId) {
+      try {
+        if (p.poolActiveBinId != null) sdkCurrentPrice = Number(_getPriceOfBinByBinId(p.poolActiveBinId, sdkBinStep).toString());
+        if (p.lowerBinId != null) sdkLowerPrice = Number(_getPriceOfBinByBinId(p.lowerBinId, sdkBinStep).toString());
+        if (p.upperBinId != null) sdkUpperPrice = Number(_getPriceOfBinByBinId(p.upperBinId, sdkBinStep).toString());
+        if (sdkTracked?.active_bin_at_deploy != null) sdkEntryPrice = Number(_getPriceOfBinByBinId(sdkTracked.active_bin_at_deploy, sdkBinStep).toString());
+      } catch (_) { /* bin price computation failed — IL stays null */ }
+    }
+    const sdkIlPct = estimateIlPct(sdkCurrentPrice, sdkEntryPrice, sdkLowerPrice, sdkUpperPrice);
+    const sdkCurrentValueUsd = roundNum(currentValue, 4);
+    const sdkPnlUsd = roundNum(solMode ? p.pnlSol : p.pnlUsd, 4);
+    const sdkNetPnlUsd = (sdkCurrentValueUsd != null && sdkIlPct != null)
+      ? roundNum(sdkPnlUsd + sdkCurrentValueUsd * (sdkIlPct / 100), 4)
+      : null;
+
     return {
-      pnl_usd:           roundNum(solMode ? p.pnlSol : p.pnlUsd, 4),
+      pnl_usd:           sdkPnlUsd,
       pnl_pct:           roundNum(reportedPnlPct ?? derivedPnlPct ?? 0, 2),
-      current_value_usd: roundNum(currentValue, 4),
+      current_value_usd: sdkCurrentValueUsd,
       unclaimed_fee_usd: roundNum(unclaimedValue, 4),
       all_time_fees_usd: roundNum(solMode ? p.allTimeFees?.total?.sol : p.allTimeFees?.total?.usd, 4),
       fee_per_tvl_24h:   Math.round(parseFloat(p.feePerTvl24h || 0) * 100) / 100,
@@ -1013,6 +1061,9 @@ export async function getPositionPnl({ pool_address, position_address }) {
       upper_bin:   p.upperBinId      ?? null,
       active_bin:  p.poolActiveBinId ?? null,
       age_minutes: p.createdAt ? Math.floor((Date.now() - p.createdAt * 1000) / 60000) : null,
+      il_pct:           sdkIlPct != null ? roundNum(sdkIlPct, 2) : null,
+      slippage_est_pct: null, // pool TVL not available from PnL API without additional call
+      net_pnl_usd:      sdkNetPnlUsd,
     };
   } catch (error) {
     log("pnl_error", error.message);
@@ -1036,6 +1087,35 @@ function roundNum(value, decimals = 4) {
   if (!Number.isFinite(n)) return 0;
   const factor = 10 ** decimals;
   return Math.round(n * factor) / factor;
+}
+
+/**
+ * Estimates IL% using the standard CLMM formula.
+ * r = currentPrice / entryPrice (clamped to position range)
+ * IL% = 2√r/(1+r) - 1 (always ≤ 0), amplified by √(upperPrice/lowerPrice) for
+ * the concentrated range width. Returns null when inputs are invalid or missing.
+ */
+function estimateIlPct(currentPrice, entryPrice, lowerPrice, upperPrice) {
+  if (!currentPrice || !entryPrice || currentPrice <= 0 || entryPrice <= 0) return null;
+  const lo = lowerPrice > 0 ? lowerPrice : 0;
+  const hi = upperPrice > 0 && upperPrice < Infinity ? upperPrice : currentPrice;
+  const clampedPrice = Math.max(lo > 0 ? lo : currentPrice, Math.min(hi, currentPrice));
+  const r = clampedPrice / entryPrice;
+  if (r <= 0) return null;
+  const ilPct = (2 * Math.sqrt(r)) / (1 + r) - 1;
+  const rangeWidth = (lo > 0 && hi > lo) ? Math.sqrt(hi / lo) : 1;
+  return ilPct * rangeWidth * 100; // percentage (always ≤ 0)
+}
+
+/**
+ * Estimates withdrawal price impact % for a position of positionSizeUsd
+ * against a pool with poolTvlUsd total liquidity.
+ * Linear approximation: impact = positionSize / (poolTvl * 2).
+ * Returns null when data is missing.
+ */
+function estimateSlippagePct(positionSizeUsd, poolTvlUsd) {
+  if (!positionSizeUsd || !poolTvlUsd || poolTvlUsd <= 0) return null;
+  return (positionSizeUsd / (poolTvlUsd * 2)) * 100;
 }
 
 const PERFORMANCE_SIGNAL_FIELDS = [

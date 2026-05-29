@@ -66,6 +66,7 @@ export function trackPosition({
   fee_tvl_ratio,
   organic_score,
   initial_value_usd,
+  launchpad = null,
   signal_snapshot = null,
 }) {
   const state = load();
@@ -84,6 +85,7 @@ export function trackPosition({
     initial_fee_tvl_24h: fee_tvl_ratio,
     organic_score,
     initial_value_usd,
+    launchpad: launchpad || null,
     signal_snapshot: signal_snapshot || null,
     deployed_at: new Date().toISOString(),
     out_of_range_since: null,

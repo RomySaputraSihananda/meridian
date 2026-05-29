@@ -88,4 +88,16 @@ describe("computeDeployAmount", () => {
     const result = computeDeployAmount(0);
     expect(result).toBe(0.5);
   });
+
+  it("reduces size when volatility is high (> 3)", () => {
+    const normal = computeDeployAmount(10.0);
+    const highVol = computeDeployAmount(10.0, 4.0); // volatility=4, scale=max(0.5, 1-(4-3)/10)=0.9
+    expect(highVol).toBeLessThan(normal);
+  });
+
+  it("caps scale-down at 50% (volatility=13 → factor=0.5)", () => {
+    const base = computeDeployAmount(10.0);
+    const extremeVol = computeDeployAmount(10.0, 13.0); // scale = max(0.5, 1-1.0) = 0.5
+    expect(extremeVol).toBeGreaterThanOrEqual(base * 0.5 - 0.01);
+  });
 });
