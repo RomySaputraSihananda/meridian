@@ -18,6 +18,8 @@
     "test": "vitest run --coverage",
     "test:unit": "vitest run",
     "test:syntax": "find . -path ./node_modules -prune -o -name '*.js' -print | xargs node --check",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix && prettier --write .",
     "lint:syntax": "npm run test:syntax",
     "test:screen": "node scripts/manual/test-live-screening.js",
     "test:agent": "DRY_RUN=true node scripts/manual/test-live-agent.js",
@@ -43,6 +45,10 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.7",
+    "eslint": "^10.4.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.3",
     "vitest": "^4.1.7"
   }
 }
