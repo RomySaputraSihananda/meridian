@@ -29,3 +29,16 @@ export const paths = {
   paperPositionsPath: path.join(dataDir, "paper-positions.json"),
   logDir:             path.join(dataDir, "logs"),
 };
+
+/**
+ * Call at startup when MERIDIAN_PROFILE=autoresearch.
+ * Throws if MERIDIAN_DATA_DIR resolves to the project root — that would clobber production state.
+ */
+export function assertIsolated() {
+  if (dataDir === __root) {
+    throw new Error(
+      "Isolation guard: MERIDIAN_PROFILE=autoresearch but MERIDIAN_DATA_DIR is not set or " +
+      "resolves to project root. Set MERIDIAN_DATA_DIR to a separate directory."
+    );
+  }
+}

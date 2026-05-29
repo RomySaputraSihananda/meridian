@@ -56,6 +56,24 @@ function actionHint(action) {
   }
 }
 
+const SENSITIVE_KEYS = new Set(["password", "walletKey", "privateKey", "apiKey", "secret", "token", "mnemonic"]);
+
+function redactSensitive(obj) {
+  if (typeof obj !== "object" || obj === null) return obj;
+  const out = Array.isArray(obj) ? [] : {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = SENSITIVE_KEYS.has(k) ? "[REDACTED]" : redactSensitive(v);
+  }
+  return out;
+}
+
+export function formatLogLine(event, msg, cycleId = null) {
+  const payload = typeof msg === "object" && msg !== null ? redactSensitive(msg) : String(msg ?? "");
+  const entry = { ts: new Date().toISOString(), event, msg: payload };
+  if (cycleId) entry.cycleId = cycleId;
+  return JSON.stringify(entry);
+}
+
 export function logAction(action) {
   const timestamp = new Date().toISOString();
 

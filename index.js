@@ -5,6 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { agentLoop } from "./agent.js";
 import { log } from "./logger.js";
+import { assertIsolated } from "./paths.js";
 import { getMyPositions, closePosition, getActiveBin } from "./tools/dlmm.js";
 import { getWalletBalances } from "./tools/wallet.js";
 import { getTopCandidates } from "./tools/screening.js";
@@ -42,6 +43,10 @@ const isMain = entrypointPath
   : false;
 
 if (isMain) {
+  if (process.env.MERIDIAN_PROFILE === "autoresearch") {
+    assertIsolated(); // throws and exits if data dir is not isolated
+    log("startup", `Autoresearch mode: data dir = ${process.env.MERIDIAN_DATA_DIR}`);
+  }
   log("startup", "DLMM LP Agent starting...");
   log("startup", `Mode: ${process.env.DRY_RUN === "true" ? "DRY RUN" : "LIVE"}`);
   log("startup", `Model: ${process.env.LLM_MODEL || "hermes-3-405b"}`);
