@@ -510,6 +510,9 @@ If no smart wallets are present, rely on fundamentals (fees, volume, organic sco
     }
   },
 
+  // ═══════════════════════════════════════════
+  //  TOKEN RESEARCH TOOLS
+  // ═══════════════════════════════════════════
   {
     type: "function",
     function: {
@@ -697,6 +700,9 @@ Modes:
     }
   },
 
+  // ═══════════════════════════════════════════
+  //  ADMIN / CONFIG / MEMORY TOOLS
+  // ═══════════════════════════════════════════
   {
     type: "function",
     function: {
@@ -1112,6 +1118,10 @@ Blacklisted tokens are filtered BEFORE the LLM even sees pool candidates.`,
       }
     }
   },
+
+  // ═══════════════════════════════════════════
+  //  PAPER SIMULATION TOOLS
+  // ═══════════════════════════════════════════
   {
     type: "function",
     function: {

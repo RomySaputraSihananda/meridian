@@ -16,10 +16,12 @@ function maybeResetForNewDay() {
   }
 }
 
+/** Reset daily loss/gain/consecutive-loss counters and update date. */
 export function resetDailyStats() {
   _stats = { date: new Date().toDateString(), dailyLossSol: 0, dailyGainSol: 0, consecutiveLosses: 0, tradesCount: 0 };
 }
 
+/** Record a trade's PnL and update win/loss streak counters. @param {{pnlSol: number}} - Trade result with PnL in SOL */
 export function recordTrade({ pnlSol }) {
   maybeResetForNewDay();
   _stats.tradesCount++;
@@ -63,6 +65,7 @@ export function checkCircuitBreakers(cfg) {
   return { blocked: false, reason: null };
 }
 
+/** Get a copy of current daily loss/gain statistics. @returns {{date: string, dailyLossSol: number, dailyGainSol: number, consecutiveLosses: number, tradesCount: number}} */
 export function getDailyStats() {
   maybeResetForNewDay();
   return { ..._stats };

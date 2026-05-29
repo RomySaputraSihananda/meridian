@@ -22,6 +22,7 @@ let _isOverflowDefaultBinArrayBitmap = null;
 let _BIN_ARRAY_FEE = null;
 let _BIN_ARRAY_BITMAP_FEE = null;
 
+/** Lazy-load Meteora DLMM SDK modules and helper functions. @returns {Promise<{DLMM, StrategyType, getBinIdFromPrice, ...}>} */
 export async function getDLMM() {
   if (!_DLMM) {
     const mod = await import("@meteora-ag/dlmm");
@@ -56,6 +57,7 @@ export async function getDLMM() {
 let _connection = null;
 let _wallet = null;
 
+/** Get or create Solana RPC connection singleton. @returns {Connection} */
 export function getConnection() {
   if (!_connection) {
     _connection = new Connection(process.env.RPC_URL, "confirmed");
@@ -63,6 +65,7 @@ export function getConnection() {
   return _connection;
 }
 
+/** Get or create wallet keypair singleton from WALLET_PRIVATE_KEY env var. @returns {Keypair} */
 export function getWallet() {
   if (!_wallet) {
     if (!process.env.WALLET_PRIVATE_KEY) {
@@ -75,6 +78,7 @@ export function getWallet() {
 }
 
 // ─── Pure numeric helper ──────────────────────────────────────
+/** Round a number to specified decimal places; returns 0 for non-finite values. @param {number|string} value @param {number} decimals @returns {number} */
 export function roundNum(value, decimals = 4) {
   const n = Number(value);
   if (!Number.isFinite(n)) return 0;
