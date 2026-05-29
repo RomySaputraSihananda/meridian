@@ -1042,13 +1042,34 @@ function getDeterministicCloseRule(position, managementConfig) {
   ) {
     return { action: "CLOSE", rule: 3, reason: "pumped far above range" };
   }
+  // Rule 4a: OOR + negligible fees → fast exit (don't wait full OOR timer)
+  // Catches: deploy → immediately OOR → no fees earned → losing gas for nothing
+  if (
+    !position.in_range &&
+    (position.unclaimed_fees_usd ?? 0) < (managementConfig.minUnclaimedToHoldOOR ?? 0.5) &&
+    (position.minutes_out_of_range ?? 0) >= (managementConfig.oorFastExitMinutes ?? 10) &&
+    (position.age_minutes ?? 0) >= 10
+  ) {
+    const fees = (position.unclaimed_fees_usd ?? 0).toFixed(2);
+    const mins = Math.round(position.minutes_out_of_range ?? 0);
+    return { action: "CLOSE", rule: "4a", reason: `OOR ${mins}m, fees $${fees} below threshold` };
+  }
   if (
     position.active_bin != null &&
     position.upper_bin != null &&
     position.active_bin > position.upper_bin &&
     (position.minutes_out_of_range ?? 0) >= managementConfig.outOfRangeWaitMinutes
   ) {
-    return { action: "CLOSE", rule: 4, reason: "OOR" };
+    return { action: "CLOSE", rule: 4, reason: "OOR above" };
+  }
+  // Rule 4b: OOR below (price dropped below entry range) — not covered by rule 4
+  if (
+    position.active_bin != null &&
+    position.lower_bin != null &&
+    position.active_bin < position.lower_bin &&
+    (position.minutes_out_of_range ?? 0) >= managementConfig.outOfRangeWaitMinutes
+  ) {
+    return { action: "CLOSE", rule: "4b", reason: "OOR below — price dropped" };
   }
   if (
     position.fee_per_tvl_24h != null &&
