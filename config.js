@@ -166,7 +166,7 @@ export const config = {
     decayFactor:    u.darwinDecay       ?? 0.95,
     weightFloor:    u.darwinFloor       ?? 0.3,
     weightCeiling:  u.darwinCeiling     ?? 2.5,
-    minSamples:     u.darwinMinSamples  ?? 10,
+    minSamples:     u.darwinMinSamples  ?? 20,
   },
 
   // ─── Common Token Mints ────────────────
