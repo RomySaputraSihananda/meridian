@@ -1,6 +1,4 @@
 import {
-  Connection,
-  Keypair,
   PublicKey,
   SystemInstruction,
   SystemProgram,
@@ -10,9 +8,9 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import BN from "bn.js";
-import bs58 from "bs58";
 import { config, computeDeployAmount, MIN_SAFE_BINS_BELOW } from "../config.js";
 import { log } from "../logger.js";
+import { getDLMM, getConnection, getWallet, roundNum } from "./dlmm-adapter.js";
 import {
   trackPosition,
   markOutOfRange,
@@ -30,72 +28,6 @@ import { appendDecision } from "../decision-log.js";
 import { agentMeridianJson, getAgentIdForRequests, getAgentMeridianHeaders } from "./agent-meridian.js";
 import { getAndClearStagedSignals } from "../signal-tracker.js";
 
-// ─── Lazy SDK loader ───────────────────────────────────────────
-// @meteora-ag/dlmm → @coral-xyz/anchor uses CJS directory imports
-// that break in ESM on Node 24. Dynamic import defers loading until
-// an actual on-chain call is needed (never triggered in dry-run).
-let _DLMM = null;
-let _StrategyType = null;
-let _getBinIdFromPrice = null;
-let _getPriceOfBinByBinId = null;
-let _getBinArrayKeysCoverage = null;
-let _getBinArrayIndexesCoverage = null;
-let _deriveBinArrayBitmapExtension = null;
-let _isOverflowDefaultBinArrayBitmap = null;
-let _BIN_ARRAY_FEE = null;
-let _BIN_ARRAY_BITMAP_FEE = null;
-
-async function getDLMM() {
-  if (!_DLMM) {
-    const mod = await import("@meteora-ag/dlmm");
-    _DLMM = mod.default;
-    _StrategyType = mod.StrategyType;
-    _getBinIdFromPrice = mod.default?.getBinIdFromPrice;
-    _getPriceOfBinByBinId = mod.getPriceOfBinByBinId;
-    _getBinArrayKeysCoverage = mod.getBinArrayKeysCoverage;
-    _getBinArrayIndexesCoverage = mod.getBinArrayIndexesCoverage;
-    _deriveBinArrayBitmapExtension = mod.deriveBinArrayBitmapExtension;
-    _isOverflowDefaultBinArrayBitmap = mod.isOverflowDefaultBinArrayBitmap;
-    _BIN_ARRAY_FEE = mod.BIN_ARRAY_FEE;
-    _BIN_ARRAY_BITMAP_FEE = mod.BIN_ARRAY_BITMAP_FEE;
-  }
-  return {
-    DLMM: _DLMM,
-    StrategyType: _StrategyType,
-    getBinIdFromPrice: _getBinIdFromPrice,
-    getPriceOfBinByBinId: _getPriceOfBinByBinId,
-    getBinArrayKeysCoverage: _getBinArrayKeysCoverage,
-    getBinArrayIndexesCoverage: _getBinArrayIndexesCoverage,
-    deriveBinArrayBitmapExtension: _deriveBinArrayBitmapExtension,
-    isOverflowDefaultBinArrayBitmap: _isOverflowDefaultBinArrayBitmap,
-    BIN_ARRAY_FEE: _BIN_ARRAY_FEE,
-    BIN_ARRAY_BITMAP_FEE: _BIN_ARRAY_BITMAP_FEE,
-  };
-}
-
-// ─── Lazy wallet/connection init ──────────────────────────────
-// Avoids crashing on import when WALLET_PRIVATE_KEY is not yet set
-// (e.g. during screening-only tests).
-let _connection = null;
-let _wallet = null;
-
-function getConnection() {
-  if (!_connection) {
-    _connection = new Connection(process.env.RPC_URL, "confirmed");
-  }
-  return _connection;
-}
-
-function getWallet() {
-  if (!_wallet) {
-    if (!process.env.WALLET_PRIVATE_KEY) {
-      throw new Error("WALLET_PRIVATE_KEY not set");
-    }
-    _wallet = Keypair.fromSecretKey(bs58.decode(process.env.WALLET_PRIVATE_KEY));
-    log("init", `Wallet: ${_wallet.publicKey.toString()}`);
-  }
-  return _wallet;
-}
 
 function shouldUseLpAgentRelay() {
   return !!config.api.lpAgentRelayEnabled;
@@ -1082,12 +1014,6 @@ function maybeNum(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function roundNum(value, decimals = 4) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  const factor = 10 ** decimals;
-  return Math.round(n * factor) / factor;
-}
 
 /**
  * Estimates IL% using the standard CLMM formula.
