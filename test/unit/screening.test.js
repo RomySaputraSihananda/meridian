@@ -764,4 +764,87 @@ describe("discoverPools filter integration", () => {
       expect(result.pools[0].pool).toBe(goodPool.pool_address);
     });
   });
+
+  // ── 5k. Multi-category screening: loop, merge, dedupe ─────────────────────
+  describe("multi-category screening", () => {
+    // Returns different pools per category based on the &category= in the URL
+    function stubFetchByCategory(poolsByCategory) {
+      vi.stubGlobal("fetch", vi.fn(async (url) => {
+        const m = String(url).match(/[?&]category=([^&]+)/);
+        const category = m ? m[1] : "trending";
+        const pools = poolsByCategory[category] ?? [];
+        return { ok: true, json: async () => ({ data: pools, total: pools.length }) };
+      }));
+    }
+
+    it("merges pools from multiple categories", async () => {
+      config.screening.category = ["trending", "top"];
+      const trendingPool = makePool({ pool_address: "PoolTrending111", name: "TREND/SOL" });
+      const topPool = makePool({ pool_address: "PoolTop222", name: "TOP/SOL" });
+      stubFetchByCategory({ trending: [trendingPool], top: [topPool] });
+
+      const result = await discoverPools();
+      const addresses = result.pools.map((p) => p.pool);
+      expect(addresses).toContain("PoolTrending111");
+      expect(addresses).toContain("PoolTop222");
+    });
+
+    it("dedupes a pool that appears in two categories (first category wins)", async () => {
+      config.screening.category = ["trending", "top"];
+      const shared = makePool({ pool_address: "PoolShared333", name: "SHARED/SOL" });
+      stubFetchByCategory({ trending: [shared], top: [shared] });
+
+      const result = await discoverPools();
+      const matches = result.pools.filter((p) => p.pool === "PoolShared333");
+      expect(matches).toHaveLength(1);
+    });
+
+    it("tags each pool with its discovery_category", async () => {
+      config.screening.category = ["trending", "top"];
+      const trendingPool = makePool({ pool_address: "PoolT111", name: "T/SOL" });
+      const topPool = makePool({ pool_address: "PoolT222", name: "U/SOL" });
+      stubFetchByCategory({ trending: [trendingPool], top: [topPool] });
+
+      const result = await discoverPools();
+      const t = result.pools.find((p) => p.pool === "PoolT111");
+      const u = result.pools.find((p) => p.pool === "PoolT222");
+      expect(t.discovery_category).toBe("trending");
+      expect(u.discovery_category).toBe("top");
+    });
+
+    it("survives one failing category (others still return pools)", async () => {
+      config.screening.category = ["trending", "broken"];
+      const goodPool = makePool({ pool_address: "PoolGood444", name: "GOOD/SOL" });
+      vi.stubGlobal("fetch", vi.fn(async (url) => {
+        if (String(url).includes("category=broken")) {
+          return { ok: false, status: 500, statusText: "Server Error" };
+        }
+        return { ok: true, json: async () => ({ data: [goodPool], total: 1 }) };
+      }));
+
+      const result = await discoverPools();
+      expect(result.pools.map((p) => p.pool)).toContain("PoolGood444");
+    });
+
+    it("accepts comma-separated category string", async () => {
+      config.screening.category = "trending,top";
+      const trendingPool = makePool({ pool_address: "PoolCsv111", name: "A/SOL" });
+      const topPool = makePool({ pool_address: "PoolCsv222", name: "B/SOL" });
+      stubFetchByCategory({ trending: [trendingPool], top: [topPool] });
+
+      const result = await discoverPools();
+      const addresses = result.pools.map((p) => p.pool);
+      expect(addresses).toContain("PoolCsv111");
+      expect(addresses).toContain("PoolCsv222");
+    });
+
+    it("still works with a single category string (backwards compatible)", async () => {
+      config.screening.category = "trending";
+      const pool = makePool({ pool_address: "PoolSingle111", name: "S/SOL" });
+      stubFetchByCategory({ trending: [pool] });
+
+      const result = await discoverPools();
+      expect(result.pools.map((p) => p.pool)).toContain("PoolSingle111");
+    });
+  });
 });

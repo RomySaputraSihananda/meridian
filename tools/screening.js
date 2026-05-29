@@ -32,6 +32,54 @@ function normalizeSymbol(symbol) {
   return String(symbol || "").trim().toUpperCase();
 }
 
+/**
+ * Normalize the screening `category` config into a clean array of category strings.
+ * Accepts a single string ("trending"), a comma-separated string ("trending,top"),
+ * or an array (["trending", "top"]). Falls back to ["trending"] when empty.
+ */
+function normalizeCategories(category) {
+  const raw = Array.isArray(category) ? category : String(category ?? "").split(",");
+  const cleaned = raw.map((c) => String(c).trim().toLowerCase()).filter(Boolean);
+  const unique = [...new Set(cleaned)];
+  return unique.length > 0 ? unique : ["trending"];
+}
+
+/**
+ * Fetch pools across one or more categories and merge into a single deduped list.
+ * Pools are deduped by pool_address (first category wins). Each pool is tagged with
+ * `discovery_category` for transparency. Categories that error are skipped (logged),
+ * so one bad category never blanks the whole screen.
+ */
+async function fetchPoolsAcrossCategories({ page_size, filters, timeframe, categories }) {
+  const results = await Promise.allSettled(
+    categories.map((category) =>
+      fetchPoolDiscoveryPage({ page_size, filters, timeframe, category }).then((data) => ({
+        category,
+        pools: Array.isArray(data?.data) ? data.data : [],
+        total: Number(data?.total ?? 0),
+      })),
+    ),
+  );
+
+  const byPoolAddress = new Map();
+  let total = 0;
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status !== "fulfilled") {
+      log("screening", `Category "${categories[i]}" fetch failed: ${result.reason?.message ?? result.reason}`);
+      continue;
+    }
+    total += result.value.total;
+    for (const pool of result.value.pools) {
+      const addr = pool?.pool_address;
+      if (!addr || byPoolAddress.has(addr)) continue; // first category wins
+      pool.discovery_category = result.value.category;
+      byPoolAddress.set(addr, pool);
+    }
+  }
+  return { pools: [...byPoolAddress.values()], total };
+}
+
 function scoreCandidate(pool) {
   // Adverse-selection guard: penalize short-window fee/TVL spike vs longer-window baseline.
   // A pool with 5m ratio >2× its 30m baseline is likely a blow-off top — inflated by a
@@ -442,14 +490,18 @@ export async function discoverPools({
       : null,
   ].filter(Boolean).join("&&");
 
-  const data = await fetchPoolDiscoveryPage({
+  const categories = normalizeCategories(s.category);
+  const discovery = await fetchPoolsAcrossCategories({
     page_size,
     filters,
     timeframe: s.timeframe,
-    category: s.category,
+    categories,
   });
-
-  let rawPools = Array.isArray(data.data) ? data.data : [];
+  let rawPools = discovery.pools;
+  const discoveryTotal = discovery.total;
+  if (categories.length > 1) {
+    log("screening", `Screened ${categories.length} categories (${categories.join(", ")}) → ${rawPools.length} unique pools`);
+  }
 
   if (config.screening.useDiscordSignals) {
     const signalCandidates = await fetchDiscordSignalCandidates().catch((error) => {
@@ -569,7 +621,7 @@ export async function discoverPools({
   }
 
   return {
-    total: data.total,
+    total: discoveryTotal,
     pools,
     filtered_examples: filteredExamples,
   };
@@ -845,6 +897,7 @@ function condensePool(p) {
   return {
     pool: p.pool_address,
     name: p.name,
+    discovery_category: p.discovery_category ?? null,
     base: {
       symbol: p.token_x?.symbol,
       mint: p.token_x?.address,
