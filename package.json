@@ -24,7 +24,8 @@
     "backtest": "node backtest/runner.js",
     "test:screen": "node scripts/manual/test-live-screening.js",
     "test:agent": "DRY_RUN=true node scripts/manual/test-live-agent.js",
-    "postinstall": "node scripts/patch-anchor.js"
+    "postinstall": "node scripts/patch-anchor.js",
+    "compare": "node scripts/compare-branches.js"
   },
   "knip": {
     "ignore": [
