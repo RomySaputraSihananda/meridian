@@ -55,8 +55,11 @@ function nonEmptyString(...values) {
 export const config = {
   // ─── Risk Limits ─────────────────────────
   risk: {
-    maxPositions:    u.maxPositions    ?? 3,
-    maxDeployAmount: u.maxDeployAmount ?? 50,
+    maxPositions:         u.maxPositions         ?? 3,
+    maxDeployAmount:      u.maxDeployAmount       ?? 50,
+    maxDailyLossSol:      u.maxDailyLossSol      ?? 5,
+    maxConsecutiveLosses: u.maxConsecutiveLosses  ?? 4,
+    maxDrawdownPct:       u.maxDrawdownPct        ?? 20,
   },
 
   // ─── Pool Screening Thresholds ───────────

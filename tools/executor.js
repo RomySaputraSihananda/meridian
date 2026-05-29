@@ -22,6 +22,7 @@ import { blockDev, unblockDev, listBlockedDevs } from "../dev-blocklist.js";
 import { addSmartWallet, removeSmartWallet, listSmartWallets, checkSmartWalletsOnPool } from "../smart-wallets.js";
 import { getTokenInfo, getTokenHolders, getTokenNarrative } from "./token.js";
 import { config, reloadScreeningThresholds, MIN_SAFE_BINS_BELOW } from "../config.js";
+import { checkCircuitBreakers } from "../risk.js";
 import { getRecentDecisions } from "../decision-log.js";
 import fs from "fs";
 import path from "path";
@@ -668,6 +669,12 @@ export async function executeTool(name, args) {
 async function runSafetyChecks(name, args) {
   switch (name) {
     case "deploy_position": {
+      const circuitCheck = checkCircuitBreakers(config);
+      if (circuitCheck.blocked) {
+        log("risk_block", `Deploy blocked by circuit breaker: ${circuitCheck.reason}`);
+        return { pass: false, reason: `Deploy blocked by circuit breaker: ${circuitCheck.reason}` };
+      }
+
       const poolThresholds = await validateDeployPoolThresholds(args);
       if (!poolThresholds.pass) return poolThresholds;
 
