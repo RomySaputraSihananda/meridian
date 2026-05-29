@@ -107,8 +107,10 @@ export const config = {
     repeatDeployCooldownScope: u.repeatDeployCooldownScope ?? "token", // pool | token | both
     repeatDeployCooldownMinFeeEarnedPct: u.repeatDeployCooldownMinFeeEarnedPct ?? u.repeatDeployCooldownMinFeeYieldPct ?? 0,
     minVolumeToRebalance:  u.minVolumeToRebalance  ?? 1000,
-    stopLossPct:           u.stopLossPct           ?? u.emergencyPriceDropPct ?? -50,
-    takeProfitPct:         u.takeProfitPct         ?? u.takeProfitFeePct ?? 5,
+    // Break-even win rate = |SL| / (TP + |SL|). With TP=8, SL=-12 → 60% break-even (realistic for memecoins).
+    // Old default: TP=5, SL=-50 → 91% break-even (unreachable with a 77% observed win rate).
+    stopLossPct:           u.stopLossPct           ?? u.emergencyPriceDropPct ?? -12,
+    takeProfitPct:         u.takeProfitPct         ?? u.takeProfitFeePct ?? 8,
     minFeePerTvl24h:       u.minFeePerTvl24h       ?? 7,
     minAgeBeforeYieldCheck: u.minAgeBeforeYieldCheck ?? 60, // minutes before low yield can trigger close
     minSolToOpen:          u.minSolToOpen          ?? 0.55,
