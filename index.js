@@ -669,15 +669,13 @@ STEPS:
    <pool address>
 
    ◎ <deploy amount> SOL | <strategy> | bin <active_bin>
-   Range: <minPrice> → <maxPrice>
-   Range cover: <downside %> downside | <upside %> upside | <total width %> total
+   Range: <result.price_range.min> → <result.price_range.max>  ← use exact values from tool result; if null write "N/A"
+   Range cover: <result.range_coverage.downside_pct>% downside | <result.range_coverage.upside_pct>% upside | <result.range_coverage.width_pct>% total  ← use exact values from tool result; if null write "N/A"
 
    IMPORTANT:
-   - Do NOT calculate the range percentages yourself.
-   - Use the actual deploy_position tool result:
-     range_coverage.downside_pct
-     range_coverage.upside_pct
-     range_coverage.width_pct
+   - Use the EXACT values from the deploy_position tool result for Range and Range cover.
+   - Do NOT substitute bin IDs, bin counts, or calculated values.
+   - If price_range or range_coverage is missing from the tool result, write "N/A" for those lines.
 
    MARKET
    Fee/TVL: <x>%
