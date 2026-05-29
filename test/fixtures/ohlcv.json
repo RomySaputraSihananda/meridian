@@ -1,0 +1,12 @@
+[
+  { "timestamp": 1748390400, "open": 1.000, "high": 1.020, "low": 0.995, "close": 1.010, "volume": 50000 },
+  { "timestamp": 1748390700, "open": 1.010, "high": 1.035, "low": 1.005, "close": 1.025, "volume": 65000 },
+  { "timestamp": 1748391000, "open": 1.025, "high": 1.050, "low": 1.015, "close": 1.040, "volume": 80000 },
+  { "timestamp": 1748391300, "open": 1.040, "high": 1.045, "low": 1.020, "close": 1.030, "volume": 55000 },
+  { "timestamp": 1748391600, "open": 1.030, "high": 1.035, "low": 1.010, "close": 1.020, "volume": 45000 },
+  { "timestamp": 1748391900, "open": 1.020, "high": 1.025, "low": 0.995, "close": 1.005, "volume": 70000 },
+  { "timestamp": 1748392200, "open": 1.005, "high": 1.010, "low": 0.985, "close": 0.995, "volume": 60000 },
+  { "timestamp": 1748392500, "open": 0.995, "high": 1.000, "low": 0.975, "close": 0.980, "volume": 75000 },
+  { "timestamp": 1748392800, "open": 0.980, "high": 0.990, "low": 0.965, "close": 0.970, "volume": 85000 },
+  { "timestamp": 1748393100, "open": 0.970, "high": 0.975, "low": 0.955, "close": 0.960, "volume": 90000 }
+]

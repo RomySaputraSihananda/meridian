@@ -1,0 +1,16 @@
+{
+  "pnl_usd": -8.74,
+  "pnl_pct": 0.36,
+  "pnl_pct_derived": -8.74,
+  "pnl_pct_diff": 9.1,
+  "pnl_pct_suspicious": true,
+  "current_value_usd": 91.26,
+  "unclaimed_fee_usd": 1.25,
+  "all_time_fees_usd": 12.50,
+  "fee_per_tvl_24h": 3.2,
+  "in_range": true,
+  "lower_bin": 5200,
+  "upper_bin": 5304,
+  "active_bin": 5252,
+  "age_minutes": 180
+}
