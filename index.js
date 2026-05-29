@@ -124,6 +124,45 @@ function stripThink(text) {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
 }
 
+/**
+ * Cut screener report after the last expected section (WHY THIS WON / REJECTED).
+ * Prevents hallucinated Q&A that LLMs append after the required format.
+ */
+function truncateScreenerReport(text) {
+  if (!text) return text;
+  const endSectionRe = /^(WHY THIS WON|REJECTED)\b/im;
+  const match = endSectionRe.exec(text);
+  if (!match) return text;
+
+  const isWhySection = /^WHY THIS WON\b/i.test(match[0]);
+  const header = text.slice(0, match.index);
+  const lines = text.slice(match.index).split("\n");
+
+  if (isWhySection) {
+    // WHY THIS WON = 2-4 sentences. Cut at first line ending with '?' (hallucinated question)
+    // or after 4 non-empty content lines, whichever comes first.
+    let nonEmpty = 0;
+    const out = [];
+    for (const line of lines) {
+      if (line.trim().endsWith("?")) break; // hallucinated question — stop before it
+      out.push(line);
+      if (line.trim()) nonEmpty++;
+      if (nonEmpty >= 4) break;
+    }
+    return (header + out.join("\n")).trimEnd();
+  } else {
+    // REJECTED = flat list — allow up to 15 non-empty lines
+    let kept = 0;
+    const out = [];
+    for (const line of lines) {
+      out.push(line);
+      if (line.trim()) kept++;
+      if (kept > 15) break;
+    }
+    return (header + out.join("\n")).trimEnd();
+  }
+}
+
 /** Remove chars that break Telegram legacy Markdown when pasting LLM output into a Markdown message */
 function sanitizeMarkdown(text) {
   if (!text) return "";
@@ -712,6 +751,8 @@ STEPS:
 
    REJECTED
    <short flat list of top candidate names and why they were skipped>
+STOP RULE: After the last line of WHY THIS WON (or REJECTED for no deploy), output NOTHING else. No questions. No answers. No follow-up. No self-commentary. The report ends there — period.
+
 IMPORTANT:
 - Never write "unknown" for OKX. Use real values, omit missing fields, or write exactly "OKX: unavailable".
 - Keep the whole report compact and highly scannable for Telegram.
@@ -728,7 +769,7 @@ IMPORTANT:
           await liveMessage?.toolFinish(name, result, success);
         },
       });
-    screenReport = content;
+    screenReport = truncateScreenerReport(content);
     if (/⛔\s*NO DEPLOY/i.test(content)) {
       appendDecision({
         type: "no_deploy",
