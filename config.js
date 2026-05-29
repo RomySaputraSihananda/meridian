@@ -55,11 +55,12 @@ function nonEmptyString(...values) {
 export const config = {
   // ─── Risk Limits ─────────────────────────
   risk: {
-    maxPositions:         u.maxPositions         ?? 3,
-    maxDeployAmount:      u.maxDeployAmount       ?? 50,
-    maxDailyLossSol:      u.maxDailyLossSol      ?? 5,
-    maxConsecutiveLosses: u.maxConsecutiveLosses  ?? 4,
-    maxDrawdownPct:       u.maxDrawdownPct        ?? 20,
+    maxPositions:                u.maxPositions                ?? 3,
+    maxDeployAmount:             u.maxDeployAmount             ?? 50,
+    maxDailyLossSol:             u.maxDailyLossSol             ?? 5,
+    maxConsecutiveLosses:        u.maxConsecutiveLosses        ?? 4,
+    maxDrawdownPct:              u.maxDrawdownPct              ?? 20,
+    maxSameLaunchpadPositions:   u.maxSameLaunchpadPositions   ?? 2,
   },
 
   // ─── Pool Screening Thresholds ───────────
@@ -91,6 +92,9 @@ export const config = {
     minTokenAgeHours:   u.minTokenAgeHours   ?? null, // null = no minimum
     maxTokenAgeHours:   u.maxTokenAgeHours   ?? null, // null = no maximum
     athFilterPct:       u.athFilterPct       ?? null, // e.g. -20 = only deploy if price is >= 20% below ATH
+    // Adverse-selection guard: fraction (0–1) to reduce score when 5m fee/TVL ratio is
+    // more than 2× the 30m baseline — signals a blow-off top rather than sustained activity.
+    adverseSelectionPenalty: u.adverseSelectionPenalty ?? 0.3,
   },
 
   // ─── Position Management ────────────────
@@ -223,15 +227,25 @@ export const config = {
  *   2.0 SOL wallet → 0.63 SOL deploy
  *   3.0 SOL wallet → 0.98 SOL deploy
  *   4.0 SOL wallet → 1.33 SOL deploy
+ *
+ * @param {number} walletSol
+ * @param {number|null} [volatility] - pool volatility (0-5+). >3 triggers scale-down.
  */
-export function computeDeployAmount(walletSol) {
+export function computeDeployAmount(walletSol, volatility = null) {
   const reserve  = config.management.gasReserve      ?? 0.2;
   const pct      = config.management.positionSizePct ?? 0.35;
   const floor    = config.management.deployAmountSol;
   const ceil     = config.risk.maxDeployAmount;
   const deployable = Math.max(0, walletSol - reserve);
   const dynamic    = deployable * pct;
-  const result     = Math.min(ceil, Math.max(floor, dynamic));
+  let result = Math.min(ceil, Math.max(floor, dynamic));
+
+  // Volatility-scaled reduction: high volatility = smaller position
+  if (volatility != null && Number.isFinite(volatility) && volatility > 3) {
+    const scaleFactor = Math.max(0.5, 1 - (volatility - 3) / 10);
+    result = Math.max(floor, result * scaleFactor);
+  }
+
   return parseFloat(result.toFixed(2));
 }
 

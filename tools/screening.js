@@ -33,14 +33,27 @@ function normalizeSymbol(symbol) {
 }
 
 function scoreCandidate(pool) {
+  // Adverse-selection guard: penalize short-window fee/TVL spike vs longer-window baseline.
+  // A pool with 5m ratio >2× its 30m baseline is likely a blow-off top — inflated by a
+  // transient volume spike that will revert.
+  const shortFeeTvl = Number(pool.fee_active_tvl_ratio || 0);
+  const longFeeTvl = Number(pool.fee_active_tvl_ratio_30m ?? 0);
+  const isAdverseSelection = longFeeTvl > 0 && shortFeeTvl > longFeeTvl * 2;
+  pool.adverse_selection_flag = isAdverseSelection;
+  const adversePenalty = isAdverseSelection
+    ? (config.screening.adverseSelectionPenalty ?? 0.3)
+    : 0;
+
   if (Number.isFinite(Number(pool.gmgn_score))) {
-    return Number(pool.gmgn_score) + Number(pool.fee_active_tvl_ratio || 0) * 500;
+    const base = Number(pool.gmgn_score) + shortFeeTvl * 500;
+    return base * (1 - adversePenalty);
   }
-  const feeTvl = Number(pool.fee_active_tvl_ratio || 0);
+  const feeTvl = shortFeeTvl;
   const organic = Number(pool.organic_score || 0);
   const volume = Number(pool.volume_window || 0);
   const holders = Number(pool.holders || 0);
-  return feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+  const base = feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+  return base * (1 - adversePenalty);
 }
 
 function numeric(value) {
@@ -223,6 +236,7 @@ async function applyVolatilityTimeframe(rawPools, sourceTimeframe) {
           poolAddress,
           volatility: numeric(pool?.volatility),
           volume: numeric(pool?.volume),
+          fee_active_tvl_ratio: numeric(pool?.fee_active_tvl_ratio),
         }))
     )
   );
@@ -240,6 +254,7 @@ async function applyVolatilityTimeframe(rawPools, sourceTimeframe) {
 
     pool[`volume_${volatilityTimeframe}`] = metrics.volume;
     pool[`volatility_${volatilityTimeframe}`] = metrics.volatility;
+    pool.fee_active_tvl_ratio_30m = metrics.fee_active_tvl_ratio;
 
     // Use longer-timeframe values as the canonical ones for filtering
     if (metrics.volatility != null) pool.volatility = metrics.volatility;

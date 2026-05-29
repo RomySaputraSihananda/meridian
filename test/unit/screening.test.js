@@ -48,6 +48,7 @@ vi.mock("../../config.js", () => ({
       minTokenAgeHours: null,
       maxTokenAgeHours: null,
       athFilterPct: null,
+      adverseSelectionPenalty: 0.3,
       source: "meteora",
     },
     indicators: { enabled: false },
@@ -94,6 +95,9 @@ vi.mock("../../resilient-client.js", () => ({
 
 import { discoverPools } from "../../tools/screening.js";
 import { config } from "../../config.js";
+
+// Expose config to the replicated scoreCandidate helper below
+const _config = config;
 
 // ─── Helper: build a minimal pool that passes ALL default thresholds ───────────
 
@@ -203,14 +207,24 @@ describe("isUsableVolatility", () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 function scoreCandidate(pool) {
+  const shortFeeTvl = Number(pool.fee_active_tvl_ratio || 0);
+  const longFeeTvl = Number(pool.fee_active_tvl_ratio_30m ?? 0);
+  const isAdverseSelection = longFeeTvl > 0 && shortFeeTvl > longFeeTvl * 2;
+  pool.adverse_selection_flag = isAdverseSelection;
+  const adversePenalty = isAdverseSelection
+    ? (_config.screening.adverseSelectionPenalty ?? 0.3)
+    : 0;
+
   if (Number.isFinite(Number(pool.gmgn_score))) {
-    return Number(pool.gmgn_score) + Number(pool.fee_active_tvl_ratio || 0) * 500;
+    const base = Number(pool.gmgn_score) + shortFeeTvl * 500;
+    return base * (1 - adversePenalty);
   }
-  const feeTvl = Number(pool.fee_active_tvl_ratio || 0);
+  const feeTvl = shortFeeTvl;
   const organic = Number(pool.organic_score || 0);
   const volume = Number(pool.volume_window || 0);
   const holders = Number(pool.holders || 0);
-  return feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+  const base = feeTvl * 1000 + organic * 10 + volume / 100 + holders / 100;
+  return base * (1 - adversePenalty);
 }
 
 describe("scoreCandidate", () => {
@@ -247,6 +261,124 @@ describe("scoreCandidate", () => {
   it("handles missing fields gracefully (no NaN)", () => {
     const s = scoreCandidate({});
     expect(Number.isFinite(s)).toBe(true);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 2b. scoreCandidate — adverse-selection penalty
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe("scoreCandidate — adverse-selection penalty", () => {
+  it("penalizes pool with short-window fee/TVL more than 2× long-window baseline", () => {
+    // 5m ratio: 0.30, 30m baseline: 0.08 → ratio is 3.75× above threshold
+    const pool = {
+      fee_active_tvl_ratio: 0.30,
+      fee_active_tvl_ratio_30m: 0.08,
+      organic_score: 70,
+      volume_window: 40_000,
+      holders: 800,
+    };
+    const penalized = scoreCandidate(pool);
+
+    // Unpenalized baseline (same pool without 30m ratio)
+    const basePool = {
+      fee_active_tvl_ratio: 0.30,
+      organic_score: 70,
+      volume_window: 40_000,
+      holders: 800,
+    };
+    const unpenalized = scoreCandidate(basePool);
+
+    expect(penalized).toBeLessThan(unpenalized);
+    // With penalty=0.3, penalized score = unpenalized * 0.7
+    expect(penalized).toBeCloseTo(unpenalized * 0.7, 5);
+  });
+
+  it("flags pool as adverse_selection_flag=true when spike is >2× baseline", () => {
+    const pool = { fee_active_tvl_ratio: 0.30, fee_active_tvl_ratio_30m: 0.08 };
+    scoreCandidate(pool);
+    expect(pool.adverse_selection_flag).toBe(true);
+  });
+
+  it("does not penalize when short-window ratio is exactly 2× long-window (boundary)", () => {
+    const pool = {
+      fee_active_tvl_ratio: 0.16,     // exactly 2× of 0.08
+      fee_active_tvl_ratio_30m: 0.08,
+      organic_score: 70,
+    };
+    const penalized = scoreCandidate(pool);
+    const basePool = {
+      fee_active_tvl_ratio: 0.16,
+      organic_score: 70,
+    };
+    const unpenalized = scoreCandidate(basePool);
+    // Exactly 2× is NOT above 2×, so no penalty
+    expect(penalized).toBeCloseTo(unpenalized, 5);
+    expect(pool.adverse_selection_flag).toBe(false);
+  });
+
+  it("does not penalize when short-window ratio is below 2× long-window baseline", () => {
+    const pool = {
+      fee_active_tvl_ratio: 0.12,     // 1.5× of 0.08 — under threshold
+      fee_active_tvl_ratio_30m: 0.08,
+      organic_score: 70,
+    };
+    const penalized = scoreCandidate(pool);
+    const basePool = {
+      fee_active_tvl_ratio: 0.12,
+      organic_score: 70,
+    };
+    const unpenalized = scoreCandidate(basePool);
+    expect(penalized).toBeCloseTo(unpenalized, 5);
+    expect(pool.adverse_selection_flag).toBe(false);
+  });
+
+  it("does not penalize when fee_active_tvl_ratio_30m is missing/null", () => {
+    const pool = {
+      fee_active_tvl_ratio: 0.50,     // very high short ratio, but no 30m data
+      fee_active_tvl_ratio_30m: null,
+      organic_score: 70,
+    };
+    const penalized = scoreCandidate(pool);
+    const basePool = {
+      fee_active_tvl_ratio: 0.50,
+      organic_score: 70,
+    };
+    const unpenalized = scoreCandidate(basePool);
+    // No 30m baseline means no penalty can be applied
+    expect(penalized).toBeCloseTo(unpenalized, 5);
+    expect(pool.adverse_selection_flag).toBe(false);
+  });
+
+  it("respects custom adverseSelectionPenalty from config", () => {
+    const originalPenalty = _config.screening.adverseSelectionPenalty;
+    _config.screening.adverseSelectionPenalty = 0.5; // 50% penalty instead of 30%
+    try {
+      const pool = {
+        fee_active_tvl_ratio: 0.30,
+        fee_active_tvl_ratio_30m: 0.08,
+        organic_score: 70,
+      };
+      const penalized = scoreCandidate(pool);
+      const basePool = { fee_active_tvl_ratio: 0.30, organic_score: 70 };
+      const unpenalized = scoreCandidate(basePool);
+      expect(penalized).toBeCloseTo(unpenalized * 0.5, 5);
+    } finally {
+      _config.screening.adverseSelectionPenalty = originalPenalty;
+    }
+  });
+
+  it("applies penalty on gmgn_score path too", () => {
+    const pool = {
+      gmgn_score: 100,
+      fee_active_tvl_ratio: 0.30,
+      fee_active_tvl_ratio_30m: 0.08,
+    };
+    const penalized = scoreCandidate(pool);
+    const basePool = { gmgn_score: 100, fee_active_tvl_ratio: 0.30 };
+    const unpenalized = scoreCandidate(basePool);
+    expect(penalized).toBeLessThan(unpenalized);
+    expect(penalized).toBeCloseTo(unpenalized * 0.7, 5);
   });
 });
 
