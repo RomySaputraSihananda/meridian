@@ -8,8 +8,7 @@
 import fs from "fs";
 import { log } from "./logger.js";
 import { config } from "./config.js";
-
-const POOL_MEMORY_FILE = "./pool-memory.json";
+import { paths } from "./paths.js";
 const MAX_NOTE_LENGTH = 280;
 
 function sanitizeStoredNote(text, maxLen = MAX_NOTE_LENGTH) {
@@ -24,16 +23,16 @@ function sanitizeStoredNote(text, maxLen = MAX_NOTE_LENGTH) {
 }
 
 function load() {
-  if (!fs.existsSync(POOL_MEMORY_FILE)) return {};
+  if (!fs.existsSync(paths.poolMemoryPath)) return {};
   try {
-    return JSON.parse(fs.readFileSync(POOL_MEMORY_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(paths.poolMemoryPath, "utf8"));
   } catch {
     return {};
   }
 }
 
 function save(data) {
-  fs.writeFileSync(POOL_MEMORY_FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync(paths.poolMemoryPath, JSON.stringify(data, null, 2));
 }
 
 function isOorCloseReason(reason) {

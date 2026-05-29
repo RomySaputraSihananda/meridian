@@ -1,15 +1,14 @@
 import fs from "fs";
 import path from "path";
-
-const LOG_DIR = "./logs";
+import { paths } from "./paths.js";
 const LOG_LEVEL = process.env.LOG_LEVEL || "info";
 
 const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
 const currentLevel = LEVELS[LOG_LEVEL] || 1;
 
 // Ensure log directory exists
-if (!fs.existsSync(LOG_DIR)) {
-  fs.mkdirSync(LOG_DIR, { recursive: true });
+if (!fs.existsSync(paths.logDir)) {
+  fs.mkdirSync(paths.logDir, { recursive: true });
 }
 
 /**
@@ -30,7 +29,7 @@ export function log(category, message) {
 
   // File output (daily rotation)
   const dateStr = timestamp.split("T")[0];
-  const logFile = path.join(LOG_DIR, `agent-${dateStr}.log`);
+  const logFile = path.join(paths.logDir, `agent-${dateStr}.log`);
   fs.appendFileSync(logFile, line + "\n");
 }
 
@@ -70,6 +69,6 @@ export function logAction(action) {
 
   // File: full JSON for audit trail
   const dateStr = timestamp.split("T")[0];
-  const actionsFile = path.join(LOG_DIR, `actions-${dateStr}.jsonl`);
+  const actionsFile = path.join(paths.logDir, `actions-${dateStr}.jsonl`);
   fs.appendFileSync(actionsFile, JSON.stringify(entry) + "\n");
 }

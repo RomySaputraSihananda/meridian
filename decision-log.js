@@ -1,23 +1,22 @@
 import fs from "fs";
 import { log } from "./logger.js";
-
-const DECISION_LOG_FILE = "./decision-log.json";
+import { paths } from "./paths.js";
 const MAX_DECISIONS = 100;
 
 function load() {
-  if (!fs.existsSync(DECISION_LOG_FILE)) {
+  if (!fs.existsSync(paths.decisionLogPath)) {
     return { decisions: [] };
   }
   try {
-    return JSON.parse(fs.readFileSync(DECISION_LOG_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(paths.decisionLogPath, "utf8"));
   } catch (error) {
-    log("decision_log_warn", `Invalid ${DECISION_LOG_FILE}: ${error.message}`);
+    log("decision_log_warn", `Invalid ${paths.decisionLogPath}: ${error.message}`);
     return { decisions: [] };
   }
 }
 
 function save(data) {
-  fs.writeFileSync(DECISION_LOG_FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync(paths.decisionLogPath, JSON.stringify(data, null, 2));
 }
 
 function sanitize(value, maxLen = 280) {

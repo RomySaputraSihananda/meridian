@@ -4,10 +4,9 @@ import crypto from "crypto";
 import { fileURLToPath } from "url";
 import { log } from "./logger.js";
 import { config } from "./config.js";
+import { paths } from "./paths.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
-const CACHE_PATH = path.join(__dirname, "hivemind-cache.json");
 const PACKAGE_JSON_PATH = path.join(__dirname, "package.json");
 const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
 
@@ -48,15 +47,15 @@ function getVersion() {
 const AGENT_VERSION = getVersion();
 
 function readUserConfig() {
-  return readJson(USER_CONFIG_PATH, {});
+  return readJson(paths.userConfigPath, {});
 }
 
 function writeUserConfig(nextConfig) {
-  writeJson(USER_CONFIG_PATH, nextConfig);
+  writeJson(paths.userConfigPath, nextConfig);
 }
 
 function readCache() {
-  return readJson(CACHE_PATH, {
+  return readJson(paths.hivemindCachePath, {
     sharedLessons: [],
     presets: [],
     pulledAt: null,
@@ -64,7 +63,7 @@ function readCache() {
 }
 
 function writeCache(nextCache) {
-  writeJson(CACHE_PATH, nextCache);
+  writeJson(paths.hivemindCachePath, nextCache);
 }
 
 function getBaseUrl() {

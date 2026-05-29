@@ -7,15 +7,9 @@
  */
 
 import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
 import { log } from "./logger.js";
 import { getSharedLessonsForPrompt, pushHiveLesson, pushHivePerformanceEvent } from "./hivemind.js";
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_CONFIG_PATH = path.join(__dirname, "user-config.json");
-
-const LESSONS_FILE = "./lessons.json";
+import { paths } from "./paths.js";
 const MIN_EVOLVE_POSITIONS = 5;   // don't evolve until we have real data
 const MAX_CHANGE_PER_STEP  = 0.20; // never shift a threshold more than 20% at once
 const PERFORMANCE_SIGNAL_FIELDS = [
@@ -44,18 +38,18 @@ function sanitizeLessonText(text, maxLen = MAX_MANUAL_LESSON_LENGTH) {
 }
 
 function load() {
-  if (!fs.existsSync(LESSONS_FILE)) {
+  if (!fs.existsSync(paths.lessonsPath)) {
     return { lessons: [], performance: [] };
   }
   try {
-    return JSON.parse(fs.readFileSync(LESSONS_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(paths.lessonsPath, "utf8"));
   } catch {
     return { lessons: [], performance: [] };
   }
 }
 
 function save(data) {
-  fs.writeFileSync(LESSONS_FILE, JSON.stringify(data, null, 2));
+  fs.writeFileSync(paths.lessonsPath, JSON.stringify(data, null, 2));
 }
 
 function buildSignalSnapshot(perf) {
@@ -425,15 +419,15 @@ export function evolveThresholds(perfData, config) {
 
   // ── Persist changes to user-config.json ───────────────────────
   let userConfig = {};
-  if (fs.existsSync(USER_CONFIG_PATH)) {
-    try { userConfig = JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8")); } catch { /* ignore */ }
+  if (fs.existsSync(paths.userConfigPath)) {
+    try { userConfig = JSON.parse(fs.readFileSync(paths.userConfigPath, "utf8")); } catch { /* ignore */ }
   }
 
   Object.assign(userConfig, changes);
   userConfig._lastEvolved = new Date().toISOString();
   userConfig._positionsAtEvolution = perfData.length;
 
-  fs.writeFileSync(USER_CONFIG_PATH, JSON.stringify(userConfig, null, 2));
+  fs.writeFileSync(paths.userConfigPath, JSON.stringify(userConfig, null, 2));
 
   // Apply to live config object immediately
   const s = config.screening;

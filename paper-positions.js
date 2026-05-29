@@ -11,27 +11,26 @@
 
 import fs from "fs";
 import { log } from "./logger.js";
-
-const STATE_FILE = "./paper-positions.json";
+import { paths } from "./paths.js";
 const DLMM_API  = "https://dlmm.datapi.meteora.ag";
 
 // ─── Persistence ──────────────────────────────────────────────────────────────
 
 function load() {
-  if (!fs.existsSync(STATE_FILE)) return { positions: {} };
+  if (!fs.existsSync(paths.paperPositionsPath)) return { positions: {} };
   try {
-    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+    return JSON.parse(fs.readFileSync(paths.paperPositionsPath, "utf8"));
   } catch (e) {
-    log("paper_sim", `Failed to read ${STATE_FILE}: ${e.message}`);
+    log("paper_sim", `Failed to read ${paths.paperPositionsPath}: ${e.message}`);
     return { positions: {} };
   }
 }
 
 function save(state) {
   try {
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    fs.writeFileSync(paths.paperPositionsPath, JSON.stringify(state, null, 2));
   } catch (e) {
-    log("paper_sim", `Failed to write ${STATE_FILE}: ${e.message}`);
+    log("paper_sim", `Failed to write ${paths.paperPositionsPath}: ${e.message}`);
   }
 }
 
