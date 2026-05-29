@@ -61,6 +61,23 @@ const timers = {
   screeningLastRun: null,
 };
 
+// ─── Heartbeat Liveness ──────────────────────────────────────
+const _heartbeat = {
+  lastManagementCycle: null,
+  lastScreeningCycle:  null,
+  consecutiveErrors:   0,
+};
+
+function recordCycleComplete(type) {
+  if (type === "management") _heartbeat.lastManagementCycle = Date.now();
+  else _heartbeat.lastScreeningCycle = Date.now();
+  _heartbeat.consecutiveErrors = 0;
+}
+
+function recordCycleError() {
+  _heartbeat.consecutiveErrors++;
+}
+
 function nextRunIn(lastRun, intervalMin) {
   if (!lastRun) return intervalMin * 60;
   const elapsed = (Date.now() - lastRun) / 1000;
@@ -732,12 +749,46 @@ export function startCronJobs() {
   const mgmtTask = cron.schedule(`*/${Math.max(1, config.schedule.managementIntervalMin)} * * * *`, async () => {
     if (_managementBusy) return;
     timers.managementLastRun = Date.now();
-    await runManagementCycle();
+    try {
+      await runManagementCycle();
+      recordCycleComplete("management");
+    } catch (err) {
+      recordCycleError();
+      log("cycle_error", `Management cycle error: ${err.message}`);
+    }
   });
 
-  const screenTask = cron.schedule(`*/${Math.max(1, config.schedule.screeningIntervalMin)} * * * *`, runScreeningCycle);
+  const screenTask = cron.schedule(`*/${Math.max(1, config.schedule.screeningIntervalMin)} * * * *`, async () => {
+    try {
+      await runScreeningCycle();
+      recordCycleComplete("screening");
+    } catch (err) {
+      recordCycleError();
+      log("cycle_error", `Screening cycle error: ${err.message}`);
+    }
+  });
 
   const healthTask = cron.schedule(`0 * * * *`, async () => {
+    // ── Heartbeat staleness check ────────────────────────────────
+    const mgmtIntervalMs = config.schedule.managementIntervalMin * 60_000;
+    const now = Date.now();
+    if (_heartbeat.lastManagementCycle) {
+      const staleness = now - _heartbeat.lastManagementCycle;
+      if (staleness > mgmtIntervalMs * 3) {
+        const staleMin = Math.round(staleness / 60_000);
+        log("heartbeat_warn", `No management cycle in ${staleMin}m`);
+        if (telegramEnabled()) {
+          sendMessage(`⚠️ Meridian: no management cycle in ${staleMin} min`).catch(() => {});
+        }
+      }
+    }
+    if (_heartbeat.consecutiveErrors >= 3) {
+      log("heartbeat_warn", `${_heartbeat.consecutiveErrors} consecutive cycle errors`);
+      if (telegramEnabled()) {
+        sendMessage(`⚠️ Meridian: ${_heartbeat.consecutiveErrors} consecutive errors`).catch(() => {});
+      }
+    }
+
     if (_managementBusy) return;
     _managementBusy = true;
     log("cron", "Starting health check");
@@ -875,6 +926,17 @@ async function shutdown(signal) {
 
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+process.on("unhandledRejection", (reason, _promise) => {
+  log("fatal", `Unhandled rejection: ${reason?.stack ?? reason}`);
+  if (telegramEnabled()) sendMessage(`⚠️ Meridian fatal error: ${String(reason).slice(0, 300)}`).catch(() => {});
+});
+
+process.on("uncaughtException", (err) => {
+  log("fatal", `Uncaught exception: ${err.stack}`);
+  if (telegramEnabled()) sendMessage(`🔴 Meridian uncaught exception: ${err.message.slice(0, 300)}`).catch(() => {});
+  process.exit(1);
+});
 
 // ═══════════════════════════════════════════
 //  FORMAT CANDIDATES TABLE
