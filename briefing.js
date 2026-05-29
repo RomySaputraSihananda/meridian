@@ -1,13 +1,11 @@
 import fs from "fs";
 import { log } from "./logger.js";
 import { getPerformanceSummary } from "./lessons.js";
-
-const STATE_FILE = "./state.json";
-const LESSONS_FILE = "./lessons.json";
+import { paths } from "./paths.js";
 
 export async function generateBriefing() {
-  const state = loadJson(STATE_FILE) || { positions: {}, recentEvents: [] };
-  const lessonsData = loadJson(LESSONS_FILE) || { lessons: [], performance: [] };
+  const state = loadJson(paths.statePath) || { positions: {}, recentEvents: [] };
+  const lessonsData = loadJson(paths.lessonsPath) || { lessons: [], performance: [] };
 
   const now = new Date();
   const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -51,8 +49,8 @@ export async function generateBriefing() {
     "",
     `<b>Current Portfolio:</b>`,
     `📂 Open Positions: ${openPositions.length}`,
-    perfSummary
-      ? `📊 All-time PnL: $${perfSummary.total_pnl_usd.toFixed(2)} (${perfSummary.win_rate_pct}% win)`
+    perfSummary?.all_time?.count > 0
+      ? `📊 All-time PnL: $${(perfSummary.all_time.net_pnl_usd ?? 0).toFixed(2)} (${Math.round((perfSummary.all_time.win_rate ?? 0) * 100)}% win, ${perfSummary.all_time.count} trades)`
       : "",
     "────────────────"
   ];
