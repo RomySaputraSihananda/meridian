@@ -801,3 +801,74 @@ export function getPerformanceSummary({ hours = 24 } = {}) {
     },
   };
 }
+
+// ─── Wallet Reconciliation ─────────────────────────────────────
+
+/**
+ * Computes the reconciliation gap between cumulative reported PnL and
+ * the sum of realized_sol across closed positions.
+ *
+ * `realized_sol` must be written into performance records at close time
+ * (e.g. actual SOL received after the post-close swap). Until that field
+ * is populated, this function returns null for any record missing it.
+ *
+ * Returns null when there is insufficient reconcilable data.
+ *
+ * @returns {{
+ *   reconcilable_count: number,
+ *   total_count: number,
+ *   reported_pnl_sol: number,
+ *   realized_sol: number,
+ *   gap_sol: number,
+ *   gap_pct: number | null,
+ *   note: string,
+ * } | null}
+ */
+export function getWalletReconciliation() {
+  const { performance } = load();
+  if (!performance.length) return null;
+
+  let reportedTotal = 0;
+  let realizedTotal = 0;
+  let reconcilableCount = 0;
+
+  for (const p of performance) {
+    // pnl_sol is the preferred SOL-denominated PnL field.
+    // Fall back to pnl_usd / sol_price if available (sol_price stored at close time).
+    const reported =
+      p.pnl_sol != null
+        ? p.pnl_sol
+        : p.pnl_usd != null && p.sol_price != null && p.sol_price > 0
+          ? p.pnl_usd / p.sol_price
+          : null;
+
+    // realized_sol = actual SOL credited to wallet after close + swap,
+    // net of slippage and dust. Set by dlmm.js at close time (not yet implemented).
+    const realized = p.realized_sol ?? null;
+
+    if (reported != null && realized != null) {
+      reportedTotal += reported;
+      realizedTotal += realized;
+      reconcilableCount++;
+    }
+  }
+
+  if (reconcilableCount === 0) return null;
+
+  const gap = realizedTotal - reportedTotal;
+  const gapPct =
+    reportedTotal !== 0 ? (gap / Math.abs(reportedTotal)) * 100 : null;
+
+  return {
+    reconcilable_count: reconcilableCount,
+    total_count: performance.length,
+    reported_pnl_sol: reportedTotal,
+    realized_sol: realizedTotal,
+    gap_sol: gap,      // positive = realized > reported (better than expected)
+    gap_pct: gapPct,   // negative = slippage/dust ate into value
+    note:
+      gap < 0
+        ? "Slippage/dust leakage detected"
+        : "Within tolerance",
+  };
+}
