@@ -1,9 +1,14 @@
 /**
- * Test the Pool Discovery API screening (no wallet required).
- * Run: node test/test-screening.js
+ * LIVE SCREENING SCRIPT — calls the Meteora pool discovery API.
+ * NOT run by `npm test`. Run manually: node scripts/manual/test-live-screening.js
  */
 
-import { discoverPools, getPoolDetail } from "../tools/screening.js";
+/**
+ * Test the Pool Discovery API screening (no wallet required).
+ * Run: node scripts/manual/test-live-screening.js
+ */
+
+import { discoverPools, getPoolDetail } from "../../tools/screening.js";
 
 async function main() {
   console.log("=== Testing Pool Discovery API ===\n");
