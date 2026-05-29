@@ -83,6 +83,8 @@ WALLET_PRIVATE_KEY=your_base58_private_key
 RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_KEY
 OPENROUTER_API_KEY=sk-or-...
 HELIUS_API_KEY=your_helius_key          # for wallet balance lookups
+LPAGENT_API_KEY=your_lpagent_key        # optional — for LPer research
+GMGN_API_KEY=your_gmgn_key              # optional — for GMGN screening integration
 TELEGRAM_BOT_TOKEN=123456:ABC...        # optional — for notifications + chat
 TELEGRAM_CHAT_ID=                       # auto-filled on first message
 DRY_RUN=true                            # set false for live trading
