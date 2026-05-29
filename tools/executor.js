@@ -11,7 +11,7 @@ import {
 } from "./dlmm.js";
 import { getWalletBalances, swapToken } from "./wallet.js";
 import { studyTopLPers } from "./study.js";
-import { addLesson, clearAllLessons, clearPerformance, removeLessonsByKeyword, getPerformanceHistory, pinLesson, unpinLesson, listLessons } from "../lessons.js";
+import { addLesson, clearAllLessons, clearPerformance, removeLessonsByKeyword, getPerformanceHistory, pinLesson, unpinLesson, listLessons, getTokenNetPnl } from "../lessons.js";
 import { setPositionInstruction } from "../state.js";
 
 import { getPoolMemory, addPoolNote } from "../pool-memory.js";
@@ -673,6 +673,18 @@ async function runSafetyChecks(name, args) {
       if (circuitCheck.blocked) {
         log("risk_block", `Deploy blocked by circuit breaker: ${circuitCheck.reason}`);
         return { pass: false, reason: `Deploy blocked by circuit breaker: ${circuitCheck.reason}` };
+      }
+
+      // F4: block redeploy if this token has cumulative negative net PnL across prior attempts
+      if (config.management.redeployLedgerEnabled !== false) {
+        const baseMint = args.base_mint ?? args.pool_base_mint;
+        if (baseMint) {
+          const tokenNetPnl = getTokenNetPnl(baseMint);
+          if (tokenNetPnl < 0) {
+            log("risk_block", `Redeploy blocked: token ${baseMint} has cumulative net PnL ${tokenNetPnl.toFixed(4)} (negative history)`);
+            return { pass: false, reason: `Redeploy blocked: this token has a negative cumulative PnL history (${tokenNetPnl.toFixed(4)}). Clear lessons to override.` };
+          }
+        }
       }
 
       const poolThresholds = await validateDeployPoolThresholds(args);

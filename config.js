@@ -122,6 +122,8 @@ export const config = {
     pnlSanityMaxDiffPct:   u.pnlSanityMaxDiffPct   ?? 5,    // max allowed diff between reported and derived pnl % before ignoring a tick
     // SOL mode — positions, PnL, and balances reported in SOL instead of USD
     solMode:               u.solMode               ?? false,
+    // F4: block redeployment into tokens with cumulative negative PnL history
+    redeployLedgerEnabled: u.redeployLedgerEnabled ?? true,
   },
 
   // ─── Strategy Mapping ───────────────────
