@@ -1446,6 +1446,18 @@ function refreshPrompt() {
   _ttyInterface.prompt(true);
 }
 
+// ── Telegram command handler ─────────────────────────────────────────────────
+// NOTE: telegramHandler and drainTelegramQueue are tightly coupled to 7
+// module-level state variables (_managementBusy, _screeningBusy, busy,
+// _telegramQueue, cronStarted, timers, sessionHistory) and 15 local helper
+// functions (stopCronJobs, startCronJobs, refreshPrompt, appendHistory,
+// deployLatestCandidate, runDeterministicScreen, describeLatestCandidates,
+// applySettingsMenuCallback, showSettingsMenu, formatWalletStatus,
+// formatConfigSnapshot, formatHelpText, parseConfigValue, fmtPct, and
+// self-recursive drainTelegramQueue). Extracting to a separate module would
+// require passing ~22 items into a factory deps object; keeping them here
+// avoids that complexity until index.js is further decomposed.
+
 async function drainTelegramQueue() {
   while (_telegramQueue.length > 0 && !_managementBusy && !_screeningBusy && !busy) {
     const queued = _telegramQueue.shift();
@@ -1738,6 +1750,7 @@ async function telegramHandler(msg) {
     drainTelegramQueue().catch(() => {});
   }
 }
+// ── End: Telegram command handler ────────────────────────────────────────────
 
 function fmtPct(value) {
   const n = Number(value);
