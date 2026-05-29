@@ -231,11 +231,11 @@ export const config = {
  * @param {number} walletSol
  * @param {number|null} [volatility] - pool volatility (0-5+). >3 triggers scale-down.
  */
-export function computeDeployAmount(walletSol, volatility = null) {
-  const reserve  = config.management.gasReserve      ?? 0.2;
-  const pct      = config.management.positionSizePct ?? 0.35;
-  const floor    = config.management.deployAmountSol;
-  const ceil     = config.risk.maxDeployAmount;
+export function computeDeployAmount(walletSol, volatility = null, overrides = {}) {
+  const reserve  = overrides.gasReserve      ?? config.management.gasReserve      ?? 0.2;
+  const pct      = overrides.positionSizePct ?? config.management.positionSizePct ?? 0.35;
+  const floor    = overrides.deployAmountSol ?? config.management.deployAmountSol;
+  const ceil     = overrides.maxDeployAmount ?? config.risk.maxDeployAmount;
   const deployable = Math.max(0, walletSol - reserve);
   const dynamic    = deployable * pct;
   let result = Math.min(ceil, Math.max(floor, dynamic));
