@@ -33,9 +33,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_CONFIG_PATH = path.join(__dirname, "../user-config.json");
 const POOL_DISCOVERY_BASE = "https://pool-discovery-api.datapi.meteora.ag";
 const MIN_VOLATILITY_TIMEFRAME = "30m";
+// Pool discovery API accepts: 5m, 30m, 1h, 2h, 4h, 12h, 24h (no 15m).
 const TIMEFRAME_MINUTES = {
   "5m": 5,
-  "15m": 15,
   "30m": 30,
   "1h": 60,
   "2h": 120,
