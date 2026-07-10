@@ -279,7 +279,7 @@ export async function runManagementCycle({ silent = false } = {}) {
   let mgmtReport = null;
   let positions = [];
   let liveMessage = null;
-  const screeningCooldownMs = 5 * 60 * 1000;
+  const screeningCooldownMs = config.schedule.screeningIntervalMin * 60_000;
 
   try {
     if (!silent && telegramEnabled()) {
@@ -289,9 +289,15 @@ export async function runManagementCycle({ silent = false } = {}) {
     positions = livePositions?.positions || [];
 
     if (positions.length === 0) {
-      log("cron", "No open positions — triggering screening cycle");
-      mgmtReport = "No open positions. Triggering screening cycle.";
-      runScreeningCycle().catch((e) => log("cron_error", `Triggered screening failed: ${e.message}`));
+      mgmtReport = "No open positions.";
+      const cooldownMs = config.schedule.screeningIntervalMin * 60_000;
+      if (Date.now() - _screeningLastTriggered > cooldownMs) {
+        log("cron", "No open positions — triggering screening cycle");
+        mgmtReport += " Triggering screening cycle.";
+        runScreeningCycle().catch((e) => log("cron_error", `Triggered screening failed: ${e.message}`));
+      } else {
+        log("cron", "No open positions — screening cooldown active, skipping");
+      }
       return mgmtReport;
     }
 
@@ -379,21 +385,43 @@ export async function runManagementCycle({ silent = false } = {}) {
     mgmtReport = reportLines.join("\n\n") +
       `\n\nSummary: 💼 ${positions.length} positions | ${cur}${totalValue.toFixed(4)} | fees: ${cur}${totalUnclaimed.toFixed(4)} | ${actionSummary}`;
 
-    // ── Call LLM only if action needed ──────────────────────────────
-    const actionPositions = positionData.filter(p => {
-      const a = actionMap.get(p.position);
-      return a.action !== "STAY";
+    // ── Execute CLOSE/CLAIM directly; only INSTRUCTION needs LLM ───
+    const actionPositions = positionData.filter(p => actionMap.get(p.position)?.action !== "STAY");
+    const instructionPositions = actionPositions.filter(p => actionMap.get(p.position)?.action === "INSTRUCTION");
+    const directPositions = actionPositions.filter(p => {
+      const a = actionMap.get(p.position)?.action;
+      return a === "CLOSE" || a === "CLAIM";
     });
 
-    if (actionPositions.length > 0) {
-      log("cron", `Management: ${actionPositions.length} action(s) needed — invoking LLM [model: ${config.llm.managementModel}]`);
+    // Direct execution — no LLM
+    for (const p of directPositions) {
+      const act = actionMap.get(p.position);
+      const label = act.rule ? `Rule ${act.rule}: ${act.reason}` : act.reason ?? act.action;
+      log("cron", `Direct ${act.action}: ${p.pair} — ${label}`);
+      try {
+        if (act.action === "CLOSE") {
+          const r = await executeTool("close_position", { position_address: p.position });
+          mgmtReport += `\n\n✅ Closed ${p.pair} (${label}): ${typeof r === "string" ? r.slice(0, 120) : JSON.stringify(r).slice(0, 120)}`;
+        } else {
+          const r = await executeTool("claim_fees", { position_address: p.position });
+          mgmtReport += `\n\n✅ Claimed ${p.pair}: ${typeof r === "string" ? r.slice(0, 120) : JSON.stringify(r).slice(0, 120)}`;
+        }
+      } catch (err) {
+        log("cron_error", `Direct ${act.action} failed for ${p.pair}: ${err.message}`);
+        mgmtReport += `\n\n❌ ${act.action} ${p.pair} failed: ${err.message}`;
+      }
+    }
 
-      const actionBlocks = actionPositions.map((p) => {
+    // LLM only for INSTRUCTION positions
+    if (instructionPositions.length > 0) {
+      log("cron", `Management: ${instructionPositions.length} INSTRUCTION position(s) — invoking LLM [model: ${config.llm.managementModel}]`);
+
+      const actionBlocks = instructionPositions.map((p) => {
         const act = actionMap.get(p.position);
         return [
           `POSITION: ${p.pair} (${p.position})`,
           `  pool: ${p.pool}`,
-          `  action: ${act.action}${act.rule && act.rule !== "exit" ? ` — Rule ${act.rule}: ${act.reason}` : ""}${act.rule === "exit" ? ` — ⚡ Trailing TP: ${act.reason}` : ""}`,
+          `  action: ${act.action}`,
           `  pnl_pct: ${p.pnl_pct}% | unclaimed_fees: ${cur}${p.unclaimed_fees_usd} | value: ${cur}${p.total_value_usd} | fee_per_tvl_24h: ${p.fee_per_tvl_24h ?? "?"}%`,
           `  bins: lower=${p.lower_bin} upper=${p.upper_bin} active=${p.active_bin} | oor_minutes: ${p.minutes_out_of_range ?? 0}`,
           p.instruction ? `  instruction: "${p.instruction}"` : null,
@@ -401,25 +429,21 @@ export async function runManagementCycle({ silent = false } = {}) {
       }).join("\n\n");
 
       const { content } = await agentLoop(`
-MANAGEMENT ACTION REQUIRED — ${actionPositions.length} position(s)
+MANAGEMENT — INSTRUCTION evaluation required
 
 ${actionBlocks}
 
 RULES:
-- CLOSE: call close_position only — it handles fee claiming internally, do NOT call claim_fees first
-- CLAIM: call claim_fees with position address
-- INSTRUCTION: evaluate the instruction condition. If met → close_position. If not → HOLD, do nothing.
-- ⚡ exit alerts: close immediately, no exceptions
+- INSTRUCTION: evaluate the instruction condition against get_position_pnl. If met → close_position. If not → HOLD, do nothing.
 
-Execute the required actions. Do NOT re-evaluate CLOSE/CLAIM — rules already applied. Just execute.
-After executing, write a brief one-line result per position.
+After evaluating, write a brief one-line result per position.
       `, config.llm.maxSteps, [], "MANAGER", config.llm.managementModel, 2048, {
         onToolStart: async ({ name }) => { await liveMessage?.toolStart(name); },
         onToolFinish: async ({ name, result, success }) => { await liveMessage?.toolFinish(name, result, success); },
       });
 
       mgmtReport += `\n\n${content}`;
-    } else {
+    } else if (actionPositions.length === 0) {
       log("cron", "Management: all positions STAY — skipping LLM");
       await liveMessage?.note("No tool actions needed.");
     }
@@ -556,6 +580,26 @@ export async function runScreeningCycle({ silent = false } = {}) {
       if (botPct != null && maxBotHoldersPct != null && botPct > maxBotHoldersPct) {
         log("screening", `Bot-holder filter: dropped ${pool.name} — bots ${botPct}% > ${maxBotHoldersPct}%`);
         filteredOut.push({ name: pool.name, reason: `bot holders ${botPct}% > ${maxBotHoldersPct}%` });
+        return false;
+      }
+      const feesSol = ti?.global_fees_sol ?? pool.fees_sol;
+      if (feesSol != null && feesSol < config.screening.minTokenFeesSol) {
+        log("screening", `Fee filter: dropped ${pool.name} — fees ${feesSol?.toFixed(1)} SOL < ${config.screening.minTokenFeesSol}`);
+        filteredOut.push({ name: pool.name, reason: `fees ${feesSol?.toFixed(1)} SOL < ${config.screening.minTokenFeesSol} min` });
+        return false;
+      }
+      const top10 = ti?.audit?.top_holders_pct;
+      if (top10 != null && top10 > config.screening.maxTop10Pct) {
+        log("screening", `Top10 filter: dropped ${pool.name} — top10 ${top10}% > ${config.screening.maxTop10Pct}%`);
+        filteredOut.push({ name: pool.name, reason: `top10 ${top10}% > ${config.screening.maxTop10Pct}%` });
+        return false;
+      }
+      // Momentum gate: skip pools that are vertical — bid-side into a pump = instant OOR-above
+      const priceChange1h = ti?.stats_1h?.price_change;
+      const maxEntry1hChange = config.screening.maxEntry1hPriceChange ?? 25;
+      if (priceChange1h != null && priceChange1h > maxEntry1hChange) {
+        log("screening", `Momentum gate: dropped ${pool.name} — 1h price +${priceChange1h.toFixed(1)}% > ${maxEntry1hChange}%`);
+        filteredOut.push({ name: pool.name, reason: `1h price +${priceChange1h.toFixed(1)}% exceeds momentum gate (${maxEntry1hChange}%)` });
         return false;
       }
       return true;
@@ -846,20 +890,7 @@ export function startCronJobs() {
       }
     }
 
-    if (_managementBusy) return;
-    _managementBusy = true;
-    log("cron", "Starting health check");
-    try {
-      await agentLoop(`
-HEALTH CHECK
-
-Summarize the current portfolio health, total fees earned, and performance of all open positions. Recommend any high-level adjustments if needed.
-      `, config.llm.maxSteps, [], "MANAGER");
-    } catch (error) {
-      log("cron_error", `Health check failed: ${error.message}`);
-    } finally {
-      _managementBusy = false;
-    }
+    // ponytail: LLM health check removed — burned tokens 24×/day with no output; heartbeat check above is sufficient
   });
 
   // Morning Briefing at 8:00 AM UTC+7 (1:00 AM UTC)

@@ -12,7 +12,7 @@ const DEFAULT_HIVEMIND_API_KEY = DEFAULT_AGENT_MERIDIAN_PUBLIC_KEY;
 const u = fs.existsSync(USER_CONFIG_PATH)
   ? JSON.parse(fs.readFileSync(USER_CONFIG_PATH, "utf8"))
   : {};
-export const MIN_SAFE_BINS_BELOW = 35;
+export const MIN_SAFE_BINS_BELOW = 20; // ponytail: was 35; aligned to SL=-8% (~10 bins @ 80bps)
 
 function numericConfig(value) {
   const n = Number(value);
@@ -22,7 +22,7 @@ function numericConfig(value) {
 const legacyBinsBelow = numericConfig(u.binsBelow);
 const configuredMinBinsBelow = numericConfig(u.minBinsBelow) ?? MIN_SAFE_BINS_BELOW;
 const configuredMaxBinsBelow = numericConfig(u.maxBinsBelow)
-  ?? (legacyBinsBelow != null ? Math.max(legacyBinsBelow, configuredMinBinsBelow) : 69);
+  ?? (legacyBinsBelow != null ? Math.max(legacyBinsBelow, configuredMinBinsBelow) : 40);
 const configuredDefaultBinsBelow = numericConfig(u.defaultBinsBelow) ?? legacyBinsBelow ?? configuredMaxBinsBelow;
 const strategyMinBinsBelow = Math.max(MIN_SAFE_BINS_BELOW, Math.round(configuredMinBinsBelow));
 const strategyMaxBinsBelow = Math.max(strategyMinBinsBelow, Math.round(configuredMaxBinsBelow));
@@ -95,6 +95,7 @@ export const config = {
     // Adverse-selection guard: fraction (0–1) to reduce score when 5m fee/TVL ratio is
     // more than 2× the 30m baseline — signals a blow-off top rather than sustained activity.
     adverseSelectionPenalty: u.adverseSelectionPenalty ?? 0.3,
+    maxEntry1hPriceChange: u.maxEntry1hPriceChange ?? 25, // skip pools up >25% in 1h (vertical pump = instant OOR-above)
   },
 
   // ─── Position Management ────────────────
@@ -113,9 +114,9 @@ export const config = {
     repeatDeployCooldownScope: u.repeatDeployCooldownScope ?? "token", // pool | token | both
     repeatDeployCooldownMinFeeEarnedPct: u.repeatDeployCooldownMinFeeEarnedPct ?? u.repeatDeployCooldownMinFeeYieldPct ?? 0,
     minVolumeToRebalance:  u.minVolumeToRebalance  ?? 1000,
-    // Break-even win rate = |SL| / (TP + |SL|). With TP=8, SL=-12 → 60% break-even (realistic for memecoins).
-    // Old default: TP=5, SL=-50 → 91% break-even (unreachable with a 77% observed win rate).
-    stopLossPct:           u.stopLossPct           ?? u.emergencyPriceDropPct ?? -12,
+    // Break-even win rate = |SL| / (TP + |SL|).
+    // SL=-8, trailing exits at ~+4 avg → break-even ~67% (vs 87% observed) = ~20pt margin.
+    stopLossPct:           u.stopLossPct           ?? u.emergencyPriceDropPct ?? -8,
     takeProfitPct:         u.takeProfitPct         ?? u.takeProfitFeePct ?? 8,
     minFeePerTvl24h:       u.minFeePerTvl24h       ?? 7,
     minAgeBeforeYieldCheck: u.minAgeBeforeYieldCheck ?? 60, // minutes before low yield can trigger close
@@ -125,8 +126,8 @@ export const config = {
     positionSizePct:       u.positionSizePct       ?? 0.35,
     // Trailing take-profit
     trailingTakeProfit:    u.trailingTakeProfit    ?? true,
-    trailingTriggerPct:    u.trailingTriggerPct    ?? 3,    // activate trailing at X% PnL
-    trailingDropPct:       u.trailingDropPct       ?? 1.5,  // close when drops X% from peak
+    trailingTriggerPct:    u.trailingTriggerPct    ?? 5,    // activate trailing at X% PnL
+    trailingDropPct:       u.trailingDropPct       ?? 2,    // close when drops X% from peak
     pnlSanityMaxDiffPct:   u.pnlSanityMaxDiffPct   ?? 5,    // max allowed diff between reported and derived pnl % before ignoring a tick
     // SOL mode — positions, PnL, and balances reported in SOL instead of USD
     solMode:               u.solMode               ?? false,
@@ -199,7 +200,7 @@ export const config = {
       process.env.JUPITER_REFERRAL_ACCOUNT ??
       "9MzhDUnq3KxecyPzvhguQMMPbooXQ3VAoCMPDnoijwey",
     referralFeeBps: Number(
-      process.env.JUPITER_REFERRAL_FEE_BPS ?? 50,
+      process.env.JUPITER_REFERRAL_FEE_BPS ?? 0,
     ),
   },
 

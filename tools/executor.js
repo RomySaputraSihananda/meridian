@@ -168,6 +168,12 @@ async function validateDeployPoolThresholds(args) {
     };
   }
 
+  const feesSol = detail?.fees_sol ?? detail?.total_fee_24h_sol;
+  const minFeesSol = numberOrNull(config.screening.minTokenFeesSol);
+  if (feesSol != null && minFeesSol != null && minFeesSol > 0 && feesSol < minFeesSol) {
+    return { pass: false, reason: `Pool fees ${feesSol?.toFixed(1)} SOL < minTokenFeesSol ${minFeesSol}` };
+  }
+
   return { pass: true };
 }
 
@@ -837,6 +843,21 @@ async function runSafetyChecks(name, args) {
             reason: `Insufficient SOL: have ${balance.sol} SOL, need ${minRequired} SOL (${amountY} deploy + ${gasReserve} gas reserve).`,
           };
         }
+      }
+
+      // Entry-drift abort: re-fetch active bin; if price ran >3 bins since candidate snapshot, refuse.
+      // Prevents deploying bid-side liquidity into a pool that already pumped past the range.
+      if (args.pool_address && args.active_bin != null) {
+        try {
+          const freshBin = await getActiveBin(args.pool_address);
+          const snapshotBin = Number(args.active_bin);
+          if (Number.isFinite(freshBin) && Number.isFinite(snapshotBin) && freshBin > snapshotBin + 3) {
+            return {
+              pass: false,
+              reason: `Price ran: active bin moved from ${snapshotBin} → ${freshBin} (+${freshBin - snapshotBin} bins) since candidate snapshot. Re-screen.`,
+            };
+          }
+        } catch (_) { /* non-fatal — proceed if bin fetch fails */ }
       }
 
       return { pass: true };
