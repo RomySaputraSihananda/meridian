@@ -719,6 +719,8 @@ export async function runScreeningCycle({ silent = false } = {}) {
           smart_wallets_present: (sw?.in_pool?.length ?? 0) > 0,
           narrative_quality:     n?.narrative ? "present" : "absent",
           volatility:            pool.volatility            ?? null,
+          entry_price_change_1h: priceChange                ?? null,
+          entry_net_buyers:      netBuyers                  ?? null,
         });
       }
 
@@ -1529,7 +1531,7 @@ async function deployLatestCandidate(index) {
     volatility: candidate.volatility,
     fee_tvl_ratio: candidate.fee_active_tvl_ratio ?? candidate.fee_tvl_ratio,
     organic_score: candidate.organic_score,
-    initial_value_usd: candidate.tvl ?? candidate.active_tvl ?? null,
+    initial_value_usd: null, // ponytail: pool TVL != position value; close path derives it from cached pnl
   });
   if (result?.success === false || result?.error) {
     throw new Error(result.error || "Deploy failed");

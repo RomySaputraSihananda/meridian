@@ -25,6 +25,10 @@ const PERFORMANCE_SIGNAL_FIELDS = [
   "study_win_rate",
   "hive_consensus",
   "volatility",
+  "entry_price_change_1h",
+  "entry_net_buyers",
+  "minutes_to_first_oor",
+  "first_oor_side",
 ];
 const MAX_MANUAL_LESSON_LENGTH = 400;
 
@@ -234,7 +238,19 @@ function derivLesson(perf) {
   let rule = "";
 
   if (outcome === "good" || outcome === "bad") {
-    if (perf.range_efficiency < 30 && outcome === "bad") {
+    // Instant-OOR pattern: entered during a pump, went OOR-above immediately
+    const minsToOor = perf.minutes_to_first_oor ?? perf.signal_snapshot?.minutes_to_first_oor;
+    const oorSide = perf.first_oor_side ?? perf.signal_snapshot?.first_oor_side;
+    const entry1hChange = perf.entry_price_change_1h ?? perf.signal_snapshot?.entry_price_change_1h;
+    if (
+      outcome === "bad" &&
+      minsToOor != null && minsToOor < 15 &&
+      oorSide === "above"
+    ) {
+      const changeStr = entry1hChange != null ? `, 1h entry change +${entry1hChange.toFixed(1)}%` : "";
+      rule = `AVOID: ${perf.pool_name}-type pools when 1h price is spiking${changeStr} — went OOR-above in ${minsToOor}m. Bid-side liquidity under a vertical candle = instant OOR.`;
+      tags.push("instant_oor_above", "momentum_entry");
+    } else if (perf.range_efficiency < 30 && outcome === "bad") {
       rule = `AVOID: ${perf.pool_name}-type pools (volatility=${perf.volatility}, bin_step=${perf.bin_step}) with strategy="${perf.strategy}" — went OOR ${100 - perf.range_efficiency}% of the time. Consider wider bin_range or bid_ask strategy.`;
       tags.push("oor", perf.strategy, `volatility_${Math.round(perf.volatility)}`);
     } else if (perf.range_efficiency > 80 && outcome === "good") {

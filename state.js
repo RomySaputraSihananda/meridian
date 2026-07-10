@@ -68,6 +68,8 @@ export function trackPosition({
   initial_value_usd,
   launchpad = null,
   signal_snapshot = null,
+  entry_price_change_1h = null,
+  entry_net_buyers = null,
 }) {
   const state = load();
   state.positions[position] = {
@@ -87,6 +89,10 @@ export function trackPosition({
     initial_value_usd,
     launchpad: launchpad || null,
     signal_snapshot: signal_snapshot || null,
+    entry_price_change_1h,
+    entry_net_buyers,
+    first_oor_at: null,
+    first_oor_side: null,
     deployed_at: new Date().toISOString(),
     out_of_range_since: null,
     last_claim_at: null,
@@ -114,14 +120,21 @@ export function trackPosition({
 /**
  * Mark a position as out of range (sets timestamp on first detection).
  */
-export function markOutOfRange(position_address) {
+export function markOutOfRange(position_address, { active_bin, lower_bin, upper_bin } = {}) {
   const state = load();
   const pos = state.positions[position_address];
   if (!pos) return;
   if (!pos.out_of_range_since) {
     pos.out_of_range_since = new Date().toISOString();
+    if (!pos.first_oor_at) {
+      pos.first_oor_at = pos.out_of_range_since;
+      // above = price pumped past upper bin; below = price dropped below lower bin
+      if (active_bin != null && lower_bin != null && upper_bin != null) {
+        pos.first_oor_side = active_bin > upper_bin ? "above" : active_bin < lower_bin ? "below" : null;
+      }
+    }
     save(state);
-    log("state", `Position ${position_address} marked out of range`);
+    log("state", `Position ${position_address} marked out of range${pos.first_oor_side ? ` (${pos.first_oor_side})` : ""}`);
   }
 }
 

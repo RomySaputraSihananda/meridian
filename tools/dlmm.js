@@ -400,6 +400,8 @@ export async function deployPosition({
   organic_score,
   initial_value_usd,
   launchpad,
+  entry_price_change_1h = null,
+  entry_net_buyers = null,
 }) {
   pool_address = normalizeMint(pool_address);
   const activeStrategy = strategy || config.strategy.strategy;
@@ -637,6 +639,8 @@ export async function deployPosition({
           initial_value_usd,
           launchpad: launchpad || null,
           signal_snapshot: signalSnapshot,
+          entry_price_change_1h,
+          entry_net_buyers,
         });
       }
 
@@ -776,6 +780,8 @@ export async function deployPosition({
       initial_value_usd,
       launchpad: launchpad || null,
       signal_snapshot: signalSnapshot,
+      entry_price_change_1h,
+      entry_net_buyers,
     });
 
     appendDecision({
@@ -1706,6 +1712,12 @@ export async function closePosition({ position_address, reason }) {
           close_reason: reason || "agent decision",
           signal_snapshot: signalSnapshot,
           realized_sol: relayRealizedSol,
+          entry_price_change_1h: tracked.entry_price_change_1h ?? null,
+          entry_net_buyers: tracked.entry_net_buyers ?? null,
+          minutes_to_first_oor: tracked.first_oor_at
+            ? Math.floor((new Date(tracked.first_oor_at).getTime() - new Date(tracked.deployed_at).getTime()) / 60000)
+            : null,
+          first_oor_side: tracked.first_oor_side ?? null,
         });
 
         appendDecision({
@@ -2004,6 +2016,12 @@ export async function closePosition({ position_address, reason }) {
         close_reason: reason || "agent decision",
         signal_snapshot: signalSnapshot,
         realized_sol: localRealizedSol,
+        entry_price_change_1h: tracked.entry_price_change_1h ?? null,
+        entry_net_buyers: tracked.entry_net_buyers ?? null,
+        minutes_to_first_oor: tracked.first_oor_at
+          ? Math.floor((new Date(tracked.first_oor_at).getTime() - new Date(tracked.deployed_at).getTime()) / 60000)
+          : null,
+        first_oor_side: tracked.first_oor_side ?? null,
       });
 
       appendDecision({
