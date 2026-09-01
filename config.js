@@ -193,6 +193,15 @@ export const config = {
     lpAgentRelayEnabled: u.lpAgentRelayEnabled ?? false,
   },
 
+  // ─── PnL source ───────────────────────────
+  // "relay" (default): existing Meteora Portfolio/PnL API + LPAgent/relay path.
+  // "rpc": read positions on-chain via RPC_URL, no LPAgent/relay dependency
+  // (falls back to "relay" automatically on error — see tools/dlmm.js).
+  pnl: {
+    source: nonEmptyString(u.pnlSource, "relay"),
+    depositCacheTtlSec: u.pnlDepositCacheTtlSec ?? 300,
+  },
+
   jupiter: {
     // Internal Jupiter Ultra settings; override by env only, do not expose in user-config.
     apiKey: process.env.JUPITER_API_KEY ?? "",

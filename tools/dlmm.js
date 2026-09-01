@@ -28,6 +28,7 @@ import { normalizeMint, getWalletBalances } from "./wallet.js";
 import { appendDecision } from "../decision-log.js";
 import { agentMeridianJson, getAgentIdForRequests, getAgentMeridianHeaders } from "./agent-meridian.js";
 import { getAndClearStagedSignals } from "../signal-tracker.js";
+import { computePositions as computeRpcPositions } from "./pnl-rpc.js";
 
 
 function shouldUseLpAgentRelay() {
@@ -1187,6 +1188,20 @@ export async function getMyPositions({ force = false, silent = false, wallet_add
   }
 
   const loadPositions = async () => { try {
+    if (config.pnl.source === "rpc") {
+      try {
+        const rpcResult = await computeRpcPositions(walletAddress);
+        if (useLocalWallet) {
+          syncOpenPositions(rpcResult.positions.map(p => p.position));
+          _positionsCache = rpcResult;
+          _positionsCacheAt = Date.now();
+        }
+        return rpcResult;
+      } catch (error) {
+        log("positions_warn", `RPC PnL source failed, falling back to relay/LPAgent path: ${error.message}`);
+      }
+    }
+
     let relayLpAgentByPosition = null;
     let relayRequestId = null;
     if (shouldUseLpAgentRelay()) {

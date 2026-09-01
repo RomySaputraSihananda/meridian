@@ -87,6 +87,8 @@
   "publicApiKey": "",
   "agentMeridianApiUrl": "https://api.agentmeridian.xyz/api",
   "lpAgentRelayEnabled": false,
+  "pnlSource": "relay",
+  "pnlDepositCacheTtlSec": 300,
   "chartIndicators": {
     "enabled": false,
     "entryPreset": "supertrend_break",
