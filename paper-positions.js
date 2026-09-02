@@ -71,18 +71,36 @@ async function fetchPoolConfig(poolAddress) {
   };
 }
 
+// Meteora's /ohlcv API rejects windows wider than ~8h at the 5m timeframe
+// ("time range too large" 400 — verified empirically: 8h ok, 9h rejected).
+// A position that falls behind by more than that (e.g. server downtime)
+// would otherwise 400 forever, since last_candle_timestamp only advances
+// on success — the gap could never shrink on its own.
+const MAX_OHLCV_WINDOW_SEC = 8 * 60 * 60;
+// ponytail: cap backfill to ~48h/tick so one very stale position can't hog
+// a tick with dozens of sequential requests; it just catches up more over
+// the next few 5m ticks instead. Raise if a real backlog needs it.
+const MAX_CHUNKS_PER_TICK = 6;
+
 /**
  * Fetch 5m candles from startTimestamp (unix seconds) to now.
  * Returns only candles newer than startTimestamp.
  */
 async function fetchNewCandles(poolAddress, fromTimestamp) {
   const end = Math.floor(Date.now() / 1000);
-  const url  = `${DLMM_API}/pools/${poolAddress}/ohlcv?timeframe=5m&start_time=${fromTimestamp}&end_time=${end}`;
-  const res  = await fetch(url);
-  if (!res.ok) throw new Error(`OHLCV fetch failed: ${res.status}`);
-  const data = await res.json();
+  const all = [];
+  let chunkStart = fromTimestamp;
+  for (let i = 0; i < MAX_CHUNKS_PER_TICK && chunkStart < end; i++) {
+    const chunkEnd = Math.min(chunkStart + MAX_OHLCV_WINDOW_SEC, end);
+    const url = `${DLMM_API}/pools/${poolAddress}/ohlcv?timeframe=5m&start_time=${chunkStart}&end_time=${chunkEnd}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`OHLCV fetch failed: ${res.status}`);
+    const data = await res.json();
+    all.push(...(data.data ?? []));
+    chunkStart = chunkEnd;
+  }
   // Filter out the candle at exactly fromTimestamp (already processed)
-  return (data.data ?? []).filter((c) => c.timestamp > fromTimestamp);
+  return all.filter((c) => c.timestamp > fromTimestamp);
 }
 
 // ─── Liquidity distribution ───────────────────────────────────────────────────
