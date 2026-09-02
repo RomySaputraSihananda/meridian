@@ -84,7 +84,9 @@ const MAX_CHUNKS_PER_TICK = 6;
 
 /**
  * Fetch 5m candles from startTimestamp (unix seconds) to now.
- * Returns only candles newer than startTimestamp.
+ * Returns { candles, scannedUntil } — candles newer than startTimestamp,
+ * plus how far we've confirmed-scanned (even chunks with zero trades still
+ * count as progress, so a quiet pool doesn't get re-scanned forever).
  */
 async function fetchNewCandles(poolAddress, fromTimestamp) {
   const end = Math.floor(Date.now() / 1000);
@@ -99,8 +101,11 @@ async function fetchNewCandles(poolAddress, fromTimestamp) {
     all.push(...(data.data ?? []));
     chunkStart = chunkEnd;
   }
-  // Filter out the candle at exactly fromTimestamp (already processed)
-  return all.filter((c) => c.timestamp > fromTimestamp);
+  return {
+    // Filter out the candle at exactly fromTimestamp (already processed)
+    candles: all.filter((c) => c.timestamp > fromTimestamp),
+    scannedUntil: chunkStart,
+  };
 }
 
 // ─── Liquidity distribution ───────────────────────────────────────────────────
@@ -289,8 +294,16 @@ export async function tickPaperPositions() {
 
   for (const pos of open) {
     try {
-      const candles = await fetchNewCandles(pos.pool_address, pos.last_candle_timestamp);
-      if (candles.length === 0) continue;
+      const { candles, scannedUntil } = await fetchNewCandles(pos.pool_address, pos.last_candle_timestamp);
+      if (candles.length === 0) {
+        // No trades in the scanned window, but it WAS scanned — advance past
+        // it so a quiet pool doesn't get re-fetched forever without progress.
+        if (scannedUntil > pos.last_candle_timestamp) {
+          pos.last_candle_timestamp = scannedUntil;
+          state.positions[pos.id] = pos;
+        }
+        continue;
+      }
 
       let { fees_earned, il_usd, candles_total, candles_in_range } = pos;
 
@@ -317,6 +330,9 @@ export async function tickPaperPositions() {
         pos.last_price            = currentPrice;
         pos.last_candle_timestamp = candle.timestamp;
       }
+      // The scanned window may extend past the last real candle (quiet tail);
+      // advance to it so that gap isn't re-scanned next tick.
+      if (scannedUntil > pos.last_candle_timestamp) pos.last_candle_timestamp = scannedUntil;
 
       pos.fees_earned      = +fees_earned.toFixed(4);
       pos.il_usd           = +il_usd.toFixed(4);

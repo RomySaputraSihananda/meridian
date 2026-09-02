@@ -37,6 +37,7 @@ import {
   listPaperPositions,
   closePaperPosition,
   getPaperPosition,
+  tickPaperPositions,
 } from "../../paper-positions.js";
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -646,5 +647,71 @@ describe("ohlcv fixture — smoke test with real candle data", () => {
     // Candles 1–5 are in range [0.95, 1.05]; later candles drift lower
     expect(inRangeCount).toBeGreaterThan(0);
     expect(totalFees).toBeGreaterThan(0);
+  });
+});
+
+describe("tickPaperPositions — OHLCV chunking (fix for Meteora's 'time range too large')", () => {
+  const HOUR = 3600;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("caps a very stale position's backfill to 6 chunks of <=8h and still advances when candles are empty", async () => {
+    const now = 1800000000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    const staleSince = now - 100 * 24 * HOUR; // 100 days behind
+    seedState({ "paper-stale": makePosition({ id: "paper-stale", last_candle_timestamp: staleSince }) });
+
+    const calls = [];
+    vi.stubGlobal("fetch", vi.fn(async (url) => {
+      calls.push(url);
+      return { ok: true, json: async () => ({ data: [] }) };
+    }));
+
+    await tickPaperPositions();
+
+    expect(calls.length).toBe(6); // capped at MAX_CHUNKS_PER_TICK, not one giant request
+    const stored = JSON.parse(fs.readFileSync(_tmpPath, "utf8"));
+    expect(stored.positions["paper-stale"].last_candle_timestamp).toBe(staleSince + 6 * 8 * HOUR);
+  });
+
+  it("advances exactly to now when the remaining gap is smaller than one chunk", async () => {
+    const now = 1800000000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    const staleSince = now - 3 * HOUR;
+    seedState({ "paper-recent": makePosition({ id: "paper-recent", last_candle_timestamp: staleSince }) });
+
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => ({ data: [] }) })));
+
+    await tickPaperPositions();
+
+    const stored = JSON.parse(fs.readFileSync(_tmpPath, "utf8"));
+    expect(stored.positions["paper-recent"].last_candle_timestamp).toBe(now);
+  });
+
+  it("a 400 on one position does not stop the others from ticking", async () => {
+    const now = 1800000000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now * 1000);
+    seedState({
+      "paper-broken": makePosition({ id: "paper-broken", last_candle_timestamp: now - HOUR }),
+      "paper-ok":     makePosition({ id: "paper-ok", last_candle_timestamp: now - HOUR }),
+    });
+
+    // First fetch call 400s (simulating the stale position that overflowed
+    // the window), the rest succeed — the other position must still tick.
+    let call = 0;
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      call++;
+      if (call === 1) return { ok: false, status: 400, text: async () => "time range too large" };
+      return { ok: true, json: async () => ({ data: [] }) };
+    }));
+
+    await expect(tickPaperPositions()).resolves.not.toThrow();
+    expect(call).toBeGreaterThanOrEqual(2); // both positions were attempted
   });
 });
